@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { categories, getCategory, getProductsByCategory } from '@/lib/data'
+import { categories, getCategory } from '@/lib/data'
 import { ListingView } from '@/components/listing/listing-view'
 import { PageIntro } from '@/components/listing/page-intro'
 import { cn } from '@/lib/utils'
@@ -44,7 +44,7 @@ export default async function CategoryPage({ params }: { params: Promise<{ slug:
             </Link>
           ))}
         </nav>
-        <ListingView products={getProductsByCategory(slug)} />
+        <ListingView products={[]} categorySlug={slug} />
       </div>
     </>
   )

@@ -4,10 +4,29 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { motion } from 'motion/react'
 import { ArrowRight, ShieldCheck, Star } from 'lucide-react'
+import { useAuth } from '@/components/auth-provider'
 
 const ease = [0.22, 1, 0.36, 1] as const
 
 export function Hero() {
+  const { user, authReady } = useAuth()
+  const sellHref = !authReady
+    ? '/sell'
+    : !user
+      ? '/signup?next=/sell'
+      : user.seller?.status === 'approved'
+        ? '/seller'
+        : user.seller?.status === 'rejected'
+          ? '/support'
+          : '/sell'
+  const sellLabel = user?.seller?.status === 'approved'
+    ? 'Seller dashboard'
+    : user?.seller?.status === 'under_review'
+      ? 'Application under review'
+      : user?.seller?.status === 'rejected'
+        ? 'Contact seller support'
+        : 'Sell on OpenMarketz'
+
   return (
     <section className="mx-auto max-w-7xl px-4 pt-6 md:px-6 md:pt-10">
       <div className="grid items-center gap-10 overflow-hidden rounded-3xl bg-secondary px-6 py-10 md:grid-cols-2 md:px-12 md:py-14">
@@ -55,6 +74,13 @@ export function Hero() {
               className="flex h-12 items-center rounded-full border border-foreground/10 bg-background px-6 text-sm font-medium transition-colors hover:bg-background/70"
             >
               {"Today's deals"}
+            </Link>
+            <Link
+              href={sellHref}
+              className="group flex h-12 items-center gap-2 rounded-full border border-foreground/10 bg-background px-6 text-sm font-medium transition-colors hover:bg-background/70"
+            >
+              {sellLabel}
+              <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
             </Link>
           </motion.div>
           <motion.dl

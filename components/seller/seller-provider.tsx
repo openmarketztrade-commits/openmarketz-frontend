@@ -1,15 +1,30 @@
 'use client'
 
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
-import { products as catalog, getSeller, type Product } from '@/lib/data'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { getSeller, type Product } from '@/lib/data'
 import { useShop } from '@/components/shop-provider'
+import { useAuth } from '@/components/auth-provider'
+import { listSellerProducts } from '@/lib/api'
+import { mapCatalogProduct, useCatalogProducts } from '@/components/catalog-provider'
 import {
-  STORE_ID, newWaybill, seedAlerts, seedBargains, seedListings, seedSalesOrders,
+  STORE_ID, newWaybill,
   type BargainRequest, type DispatchMethod, type FulfilmentStatus, type ListingStatus, type SalesOrder, type SellerAlert, type SellerListing,
 } from '@/lib/seller'
 
 export type NewListing = Pick<Product, 'name' | 'brand' | 'category' | 'price' | 'stock' | 'description' | 'highlights' | 'freeDelivery' | 'image' | 'gallery'> &
-  Partial<Pick<Product, 'compareAt' | 'negotiable' | 'condition' | 'variants'>> & { minPrice?: number; status: ListingStatus }
+  Partial<Pick<Product, 'compareAt' | 'negotiable' | 'condition' | 'variants'>> & {
+    id?: string
+    slug?: string
+    sellerId?: string
+    rating?: number
+    reviews?: number
+    sold?: number
+    specs?: { label: string; value: string }[]
+    badge?: 'Best seller' | 'New' | 'Limited'
+    minPrice?: number
+    status: ListingStatus
+    views?: number
+  }
 
 type SellerValue = {
   store: NonNullable<ReturnType<typeof getSeller>>
@@ -17,12 +32,14 @@ type SellerValue = {
   bargains: BargainRequest[]
   orders: SalesOrder[]
   alerts: SellerAlert[]
+  listingsLoaded: boolean
+  listingsError: string | null
   unreadAlerts: number
   productById: (id: string) => Product | undefined
   addListing: (input: NewListing) => SellerListing
   setListingStatus: (id: string, status: ListingStatus) => void
   updateStock: (id: string, stock: number) => void
-  respondToBargain: (id: string, action: 'accept' | 'decline' | { counter: number }) => void
+  respondToBargain: (id: string, action: 'accept' | 'decline' | { counter: number }) => Promise<void>
   advanceOrder: (id: string, next: FulfilmentStatus, dispatch?: { method: DispatchMethod; hub: string }) => void
   markAlertRead: (id: string) => void
   markAllAlertsRead: () => void
@@ -34,18 +51,54 @@ const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').repla
 
 export function SellerProvider({ children }: { children: React.ReactNode }) {
   const shop = useShop()
+  const { user } = useAuth()
+  const { products: catalog } = useCatalogProducts()
   const store = getSeller(STORE_ID)!
-  const [listings, setListings] = useState<SellerListing[]>(seedListings)
-  const [bargains, setBargains] = useState<BargainRequest[]>(seedBargains)
-  const [orders, setOrders] = useState<SalesOrder[]>(seedSalesOrders)
-  const [alerts, setAlerts] = useState<SellerAlert[]>(seedAlerts)
+  const [listings, setListings] = useState<SellerListing[]>([])
+  const [listingsLoaded, setListingsLoaded] = useState(false)
+  const [listingsError, setListingsError] = useState<string | null>(null)
+  const [bargains] = useState<BargainRequest[]>([])
+  const [orders, setOrders] = useState<SalesOrder[]>([])
+  const [alerts, setAlerts] = useState<SellerAlert[]>([])
   const [shopOverrides, setShopOverrides] = useState<Record<string, Partial<SalesOrder>>>({})
-  const [counters, setCounters] = useState<Record<string, number>>({})
   const [readIds, setReadIds] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    if (user?.seller?.status !== 'approved') {
+      setListings([])
+      setListingsLoaded(true)
+      setListingsError(null)
+      return
+    }
+
+    let active = true
+    setListingsLoaded(false)
+    void listSellerProducts()
+      .then((items) => {
+        if (!active) return
+        setListings(items.map((item) => ({
+          ...mapCatalogProduct(item),
+          status: item.status === 'DRAFT' ? 'draft' : item.status === 'PAUSED' ? 'paused' : 'active',
+          minPrice: item.minPrice,
+          views: 0,
+        })))
+        setListingsError(null)
+      })
+      .catch((cause: unknown) => {
+        if (!active) return
+        const message = cause instanceof Error ? cause.message : 'Your products could not be loaded.'
+        setListingsError(message)
+        console.error('Unable to load seller products from the marketplace API.', cause)
+      })
+      .finally(() => {
+        if (active) setListingsLoaded(true)
+      })
+    return () => { active = false }
+  }, [user?.seller?.status])
 
   const productById = useCallback(
     (id: string) => listings.find((l) => l.id === id) ?? catalog.find((p) => p.id === id),
-    [listings],
+    [listings, catalog],
   )
 
   // Orders and offers the buyer side placed on this store's products surface here too.
@@ -73,22 +126,24 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   const shopBargains = useMemo<BargainRequest[]>(
     () =>
       shop.offers
-        .filter((o) => o.sellerId === STORE_ID)
+        .filter((o) => o.role === 'seller')
         .map((o) => ({
           id: o.id,
           productId: o.productId,
-          buyerName: 'You (buyer account)',
-          buyerCity: 'Lagos',
+          buyerName: o.buyerName ?? 'Buyer',
+          buyerCity: '—',
+          productName: o.productName,
+          productImage: o.productImage,
           listPrice: o.listPrice,
           offerPrice: o.offerPrice,
           quantity: o.quantity,
           message: o.message,
           createdAt: o.createdAt,
           source: 'shop' as const,
-          status: counters[o.id] && o.status === 'pending' ? ('countered' as const) : o.status,
-          counterPrice: counters[o.id],
+          status: o.status,
+          counterPrice: o.counterPrice,
         })),
-    [shop.offers, counters],
+    [shop.offers],
   )
 
   const derivedAlerts = useMemo<SellerAlert[]>(
@@ -121,18 +176,19 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
 
   const addListing = useCallback(
     (input: NewListing) => {
-      const id = `sp_${Math.random().toString(36).slice(2, 8)}`
+      const id = input.id ?? `sp_${Math.random().toString(36).slice(2, 8)}`
+      const slug = input.slug ?? `${slugify(input.name)}-${id.slice(3)}`
       const listing: SellerListing = {
         ...input,
         id,
-        slug: `${slugify(input.name)}-${id.slice(3)}`,
-        sellerId: STORE_ID,
-        rating: 0,
-        reviews: 0,
-        sold: 0,
-        specs: [],
-        badge: 'New',
-        views: 0,
+        slug,
+        sellerId: input.sellerId ?? STORE_ID,
+        rating: input.rating ?? 0,
+        reviews: input.reviews ?? 0,
+        sold: input.sold ?? 0,
+        specs: input.specs ?? [],
+        badge: input.badge ?? 'New',
+        views: input.views ?? 0,
       }
       setListings((prev) => [listing, ...prev])
       pushAlert({ type: 'system', title: input.status === 'active' ? 'Listing is live' : 'Draft saved', body: `${input.name} ${input.status === 'active' ? 'is now visible to buyers.' : 'was saved as a draft.'}`, href: '/seller/products' })
@@ -150,22 +206,15 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const respondToBargain = useCallback<SellerValue['respondToBargain']>(
-    (id, action) => {
+    async (id, action) => {
       const isShop = shop.offers.some((o) => o.id === id)
       if (isShop) {
-        if (action === 'accept') shop.respondToOffer(id, 'accepted')
-        else if (action === 'decline') shop.respondToOffer(id, 'declined')
-        else setCounters((c) => ({ ...c, [id]: action.counter }))
+        if (action === 'accept') await shop.respondToOffer(id, 'accept')
+        else if (action === 'decline') await shop.respondToOffer(id, 'decline')
+        else await shop.respondToOffer(id, 'counter', action.counter)
         return
       }
-      setBargains((prev) =>
-        prev.map((b) => {
-          if (b.id !== id) return b
-          if (action === 'accept') return { ...b, status: 'accepted' }
-          if (action === 'decline') return { ...b, status: 'declined' }
-          return { ...b, status: 'countered', counterPrice: action.counter }
-        }),
-      )
+      throw new Error('Offer not found.')
     },
     [shop],
   )
@@ -206,10 +255,10 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(
     () => ({
-      store, listings, bargains: allBargains, orders: allOrders, alerts: allAlerts, unreadAlerts, productById,
+      store, listings, bargains: allBargains, orders: allOrders, alerts: allAlerts, unreadAlerts, listingsLoaded, listingsError, productById,
       addListing, setListingStatus, updateStock, respondToBargain, advanceOrder, markAlertRead, markAllAlertsRead,
     }),
-    [store, listings, allBargains, allOrders, allAlerts, unreadAlerts, productById, addListing, setListingStatus, updateStock, respondToBargain, advanceOrder, markAlertRead, markAllAlertsRead],
+    [store, listings, allBargains, allOrders, allAlerts, unreadAlerts, listingsLoaded, listingsError, productById, addListing, setListingStatus, updateStock, respondToBargain, advanceOrder, markAlertRead, markAllAlertsRead],
   )
 
   return <SellerContext.Provider value={value}>{children}</SellerContext.Provider>

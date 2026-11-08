@@ -92,9 +92,22 @@ function ProfileContent() {
             </p>
           </div>
           {user.seller ? (
-            <Link href="/sell" className="flex h-10 items-center gap-2 rounded-xl border px-4 text-sm font-medium hover:bg-muted">
+            <Link
+              href={
+                user.seller.status === 'approved'
+                  ? '/seller'
+                  : user.seller.status === 'rejected'
+                    ? '/support'
+                    : '/sell'
+              }
+              className="flex h-10 items-center gap-2 rounded-xl border px-4 text-sm font-medium hover:bg-muted"
+            >
               <Store className="size-4" aria-hidden="true" />
-              {user.seller.status === 'approved' ? 'Seller dashboard' : 'Application under review'}
+              {user.seller.status === 'approved'
+                ? 'Seller dashboard'
+                : user.seller.status === 'rejected'
+                  ? 'Seller application'
+                  : 'Application under review'}
             </Link>
           ) : (
             <Link href="/sell" className="flex h-10 items-center gap-2 rounded-xl bg-foreground px-4 text-sm font-medium text-background hover:opacity-90">

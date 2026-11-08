@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { CheckCircle2, KeyRound } from 'lucide-react'
-import { DEMO_CODE, useAuth } from '@/components/auth-provider'
+import { useAuth } from '@/components/auth-provider'
 import { Field, FormAlert, OtpInput, PasswordInput, PasswordStrength, SubmitButton, inputClass, isEmail, isStrongPassword } from '@/components/forms'
 
 export function ForgotPasswordForm() {
@@ -23,10 +23,11 @@ export function ForgotPasswordForm() {
     if (step === 'email') {
       if (!isEmail(email)) return setError('Enter a valid email address')
       setLoading(true)
-      await requestPasswordReset(email)
+      const res = await requestPasswordReset(email)
       setLoading(false)
+      if (!res.ok) return setError(res.error)
       setStep('code')
-      toast(`If an account exists for ${email}, a code is on its way`, { description: `Demo code: ${DEMO_CODE}` })
+      toast(`If an account exists for ${email}, a reset code is on its way`)
       return
     }
     if (code.length !== 6) return setError('Enter the 6-digit code from your email')
@@ -37,6 +38,14 @@ export function ForgotPasswordForm() {
     setLoading(false)
     if (!res.ok) return setError(res.error)
     setStep('done')
+  }
+
+  async function onResendCode() {
+    setLoading(true)
+    const res = await requestPasswordReset(email)
+    setLoading(false)
+    if (!res.ok) return setError(res.error)
+    toast('If an account exists, a new reset code is on its way')
   }
 
   if (step === 'done') {
@@ -88,7 +97,7 @@ export function ForgotPasswordForm() {
             <PasswordInput id="fp-confirm" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
           </Field>
           <SubmitButton loading={loading}>Reset password</SubmitButton>
-          <button type="button" onClick={() => toast('Code resent', { description: `Demo code: ${DEMO_CODE}` })} className="text-sm font-medium text-primary hover:underline underline-offset-2">
+          <button type="button" disabled={loading} onClick={onResendCode} className="text-sm font-medium text-primary hover:underline underline-offset-2 disabled:opacity-60">
             {"Didn't get a code? Resend"}
           </button>
         </>

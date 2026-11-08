@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { Bell, Heart, LayoutDashboard, LifeBuoy, LogOut, MapPin, MessageCircle, Package, ShieldCheck, Store, User as UserIcon } from 'lucide-react'
 import { initialsOf, useAuth } from '@/components/auth-provider'
 import {
@@ -21,8 +22,12 @@ export function Avatar({ name, src, size = 'md' }: { name: string; src?: string;
 }
 
 export function AccountMenu() {
-  const { user, signOut } = useAuth()
+  const { user, authReady, signOut } = useAuth()
   const router = useRouter()
+
+  if (!authReady) {
+    return <span aria-label="Loading account" className="ml-1 size-10 animate-pulse rounded-full bg-muted" />
+  }
 
   if (!user) {
     return (
@@ -64,21 +69,40 @@ export function AccountMenu() {
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
-        <DropdownMenuItem render={<Link href="/seller" />}>
-          <LayoutDashboard className="size-4" aria-hidden="true" />
-          Seller hub
-        </DropdownMenuItem>
-        <DropdownMenuItem render={<Link href="/sell" />}>
-          <Store className="size-4" aria-hidden="true" />
-          {user.seller ? 'Seller application' : 'Become a seller'}
+        <DropdownMenuItem
+          render={
+            <Link
+              href={
+                user.seller?.status === 'approved'
+                  ? '/seller'
+                  : user.seller?.status === 'rejected'
+                    ? '/support'
+                    : '/sell'
+              }
+            />
+          }
+        >
+          {user.seller?.status === 'approved' ? (
+            <LayoutDashboard className="size-4" aria-hidden="true" />
+          ) : (
+            <Store className="size-4" aria-hidden="true" />
+          )}
+          {user.seller?.status === 'approved'
+            ? 'Seller dashboard'
+            : user.seller?.status === 'under_review'
+              ? 'Application under review'
+              : user.seller?.status === 'rejected'
+                ? 'Contact seller support'
+                : 'Become a seller'}
         </DropdownMenuItem>
         <DropdownMenuItem render={<Link href="/support" />}>
           <LifeBuoy className="size-4" aria-hidden="true" />
           Help & support
         </DropdownMenuItem>
         <DropdownMenuItem
-          onSelect={() => {
-            signOut()
+          onClick={async () => {
+            const result = await signOut()
+            if (!result.ok) toast.error(result.error)
             router.push('/')
           }}
         >

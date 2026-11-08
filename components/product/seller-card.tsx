@@ -1,8 +1,11 @@
 import Link from 'next/link'
 import { ArrowRight, BadgeCheck, Clock, MapPin, ThumbsUp } from 'lucide-react'
-import { formatCompact, getProductsBySeller, type Seller } from '@/lib/data'
+import { formatCompact, type Seller } from '@/lib/data'
+import { useCatalogProducts } from '@/components/catalog-provider'
 
 export function SellerCard({ seller }: { seller: Seller }) {
+  const { products } = useCatalogProducts()
+  const productCount = products.filter((product) => product.sellerId === seller.id).length
   return (
     <div className="flex flex-col gap-5 rounded-3xl bg-muted/60 p-6 md:flex-row md:items-center">
       <div className="flex flex-1 items-center gap-4">
@@ -27,7 +30,7 @@ export function SellerCard({ seller }: { seller: Seller }) {
         href={`/store/${seller.slug}`}
         className="group flex h-11 items-center justify-center gap-1.5 rounded-full border bg-background px-5 text-sm font-medium hover:bg-background/70"
       >
-        {`Visit store · ${formatCompact(getProductsBySeller(seller.id).length)} items`}
+        {`Visit store · ${formatCompact(productCount)} items`}
         <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
       </Link>
     </div>

@@ -5,13 +5,15 @@ import Link from 'next/link'
 import { ArrowLeft, MapPin, MessageCircle, Truck } from 'lucide-react'
 import { toast } from 'sonner'
 import { deliveryOptions, useShop } from '@/components/shop-provider'
-import { formatPrice, getSeller, products } from '@/lib/data'
+import { formatPrice, getSeller } from '@/lib/data'
 import { OrderTimeline, StatusBadge } from '@/components/orders/order-ui'
+import { useCatalogProducts } from '@/components/catalog-provider'
 
 const paymentLabels = { card: 'Card', transfer: 'Bank transfer', ussd: 'USSD', pod: 'Pay on delivery' } as const
 
 export function OrderDetail({ id }: { id: string }) {
   const { orders } = useShop()
+  const { products } = useCatalogProducts()
   const order = orders.find((o) => o.id === id)
 
   if (!order) {

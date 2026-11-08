@@ -4,7 +4,8 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { CalendarDays, Check, CreditCard, Gift, Landmark, MapPin, ShieldCheck, Smartphone } from 'lucide-react'
-import { formatPrice, products } from '@/lib/data'
+import { formatPrice } from '@/lib/data'
+import { useCatalogProducts } from '@/components/catalog-provider'
 import { useAuth } from '@/components/auth-provider'
 import { decodeList, occasions, useWishlists } from '@/components/wishlist-provider'
 import { fieldClass } from '@/components/checkout/checkout-ui'
@@ -19,6 +20,7 @@ const methods = [
 export function SharedListView({ token }: { token: string }) {
   const list = useMemo(() => decodeList(token), [token])
   const { user } = useAuth()
+  const { products, loaded, error: catalogError } = useCatalogProducts()
   const { giftsFor, recordGifts } = useWishlists()
   const [selected, setSelected] = useState<string[]>([])
   const [giverName, setGiverName] = useState(user ? `${user.firstName} ${user.lastName}` : '')
@@ -36,6 +38,14 @@ export function SharedListView({ token }: { token: string }) {
         <h1 className="font-display text-2xl font-semibold">This wishlist link is not valid</h1>
         <p className="text-muted-foreground">Ask the owner to send you a fresh link.</p>
         <Link href="/wishlist" className="mt-2 flex h-11 items-center rounded-xl bg-foreground px-5 text-sm font-medium text-background">Go to wishlists</Link>
+      </div>
+    )
+  }
+
+  if (!loaded || catalogError) {
+    return (
+      <div role={catalogError ? 'alert' : 'status'} className="mx-auto max-w-2xl px-4 py-20 text-center text-sm text-muted-foreground">
+        {catalogError ? `Products could not be loaded: ${catalogError}` : 'Loading wishlist products…'}
       </div>
     )
   }

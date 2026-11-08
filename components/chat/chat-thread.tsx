@@ -3,8 +3,9 @@
 import Image from 'next/image'
 import { useEffect, useRef, useState } from 'react'
 import { HandCoins, Mic, SendHorizontal, X } from 'lucide-react'
-import { formatPrice, getSeller, products } from '@/lib/data'
+import { formatPrice, getSeller } from '@/lib/data'
 import { useShop, type Conversation } from '@/components/shop-provider'
+import { useCatalogProducts } from '@/components/catalog-provider'
 import { VoiceRecorder, type VoiceNote } from '@/components/voice-recorder'
 import { cn } from '@/lib/utils'
 
@@ -12,12 +13,15 @@ const time = (at: number) => new Date(at).toLocaleTimeString('en-NG', { hour: 'n
 
 export function ChatThread({ conversation }: { conversation: Conversation }) {
   const { sendMessage, markRead, offers } = useShop()
+  const { products } = useCatalogProducts()
   const [text, setText] = useState('')
   const [voiceOpen, setVoiceOpen] = useState(false)
   const [voiceNote, setVoiceNote] = useState<VoiceNote>()
   const endRef = useRef<HTMLDivElement>(null)
   const product = products.find((p) => p.id === conversation.productId)
   const seller = getSeller(conversation.sellerId)
+  const productName = product?.name ?? conversation.productName
+  const productImage = product?.image ?? conversation.productImage
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -26,7 +30,7 @@ export function ChatThread({ conversation }: { conversation: Conversation }) {
 
   function send() {
     if (!text.trim() && !voiceNote) return
-    sendMessage(conversation.id, { text: text.trim() || undefined, voiceNote })
+    void sendMessage(conversation.id, { text: text.trim() || undefined, voiceNote })
     setText('')
     setVoiceNote(undefined)
     setVoiceOpen(false)
@@ -34,14 +38,16 @@ export function ChatThread({ conversation }: { conversation: Conversation }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {product && (
+      {productName && (
         <div className="flex items-center gap-3 border-b bg-muted/40 px-4 py-3">
           <div className="relative size-11 shrink-0 overflow-hidden rounded-lg bg-muted">
-            <Image src={product.image || '/placeholder.svg'} alt="" fill sizes="44px" className="object-cover" />
+            {productImage && <Image src={productImage} alt="" fill sizes="44px" className="object-cover" />}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{product.name}</p>
-            <p className="text-xs text-muted-foreground">{formatPrice(product.price)}</p>
+            <p className="truncate text-sm font-medium">{productName}</p>
+            {(product || conversation.productPrice !== undefined) && (
+              <p className="text-xs text-muted-foreground">{formatPrice(product?.price ?? conversation.productPrice ?? 0)}</p>
+            )}
           </div>
         </div>
       )}
@@ -49,7 +55,7 @@ export function ChatThread({ conversation }: { conversation: Conversation }) {
       <div className="flex-1 overflow-y-auto px-4 py-4" aria-live="polite">
         {conversation.messages.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center text-center">
-            <p className="text-sm font-medium">{`Start a chat with ${seller?.name ?? 'the seller'}`}</p>
+            <p className="text-sm font-medium">{`Start a chat with ${seller?.name ?? conversation.sellerName ?? 'the seller'}`}</p>
             <p className="mt-1 max-w-60 text-xs text-muted-foreground">
               {`Ask about condition, delivery or availability. Usually replies ${seller?.responseTime ?? 'quickly'}.`}
             </p>
@@ -58,7 +64,7 @@ export function ChatThread({ conversation }: { conversation: Conversation }) {
                 <button
                   key={q}
                   type="button"
-                  onClick={() => sendMessage(conversation.id, { text: q })}
+                  onClick={() => void sendMessage(conversation.id, { text: q })}
                   className="rounded-full border px-3 py-1.5 text-xs hover:bg-muted"
                 >
                   {q}
@@ -79,15 +85,16 @@ export function ChatThread({ conversation }: { conversation: Conversation }) {
                     mine ? 'rounded-br-md bg-primary text-primary-foreground' : 'rounded-bl-md bg-muted',
                   )}
                 >
-                  {offer && mine && (
+                  {offer && (
                     <div className="flex items-center gap-2 rounded-xl bg-background/15 px-2.5 py-2">
                       <HandCoins className="size-4 shrink-0" aria-hidden="true" />
                       <div>
-                        <p className="text-xs opacity-80">Offer</p>
-                        <p className="font-semibold">{formatPrice(offer.offerPrice)}</p>
+                        <p className="text-xs opacity-80">{offer.role === 'seller' && offer.counterPrice ? 'Counter offer' : 'Offer'}</p>
+                        <p className="font-semibold">{formatPrice(offer.role === 'seller' ? offer.counterPrice ?? offer.offerPrice : offer.offerPrice)}</p>
                       </div>
                     </div>
                   )}
+                  {m.image && <Image src={m.image} alt="Shared attachment" width={240} height={180} className="max-h-44 w-auto rounded-lg object-cover" />}
                   {m.voiceNote && <audio src={m.voiceNote.url} controls className="h-9 w-56 max-w-full" aria-label="Voice note" />}
                   {m.text && <p className="leading-relaxed">{m.text}</p>}
                 </div>

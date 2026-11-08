@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { ShieldCheck } from 'lucide-react'
-import { getProductsBySeller, getSeller, sellers } from '@/lib/data'
+import { getSeller, sellers } from '@/lib/data'
 import { StoreHeader } from '@/components/store/store-header'
 import { ListingView } from '@/components/listing/listing-view'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -20,19 +20,17 @@ export default async function StorePage({ params }: { params: Promise<{ slug: st
   const { slug } = await params
   const seller = getSeller(slug)
   if (!seller) notFound()
-  const items = getProductsBySeller(seller.id)
-
   return (
     <>
-      <StoreHeader seller={seller} productCount={items.length} />
+      <StoreHeader seller={seller} />
       <div className="mx-auto max-w-7xl px-4 pt-10 md:px-6">
         <Tabs defaultValue="products" className="gap-8">
           <TabsList>
-            <TabsTrigger value="products">{`Products (${items.length})`}</TabsTrigger>
+            <TabsTrigger value="products">Products</TabsTrigger>
             <TabsTrigger value="about">About the store</TabsTrigger>
           </TabsList>
           <TabsContent value="products">
-            <ListingView products={items} showCategoryFilter emptyMessage="This store has no matching products." />
+            <ListingView products={[]} showCategoryFilter sellerSlug={slug} emptyMessage="This store has no matching products." />
           </TabsContent>
           <TabsContent value="about">
             <div className="grid gap-8 md:grid-cols-[1fr_320px]">

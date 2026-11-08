@@ -2,12 +2,13 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BadgeCheck, Building2, Check, IdCard, Landmark, Store } from 'lucide-react'
 import { categories } from '@/lib/data'
 import { countries, getCountry, maxBirthDate, type CountryCode } from '@/lib/geo'
 import { useAuth } from '@/components/auth-provider'
 import { Field, FileDrop, FormAlert, Select, SubmitButton, inputClass } from '@/components/forms'
+import { errorMessage, uploadMedia } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 const steps = [
@@ -17,14 +18,24 @@ const steps = [
   { label: 'Payout', icon: Landmark },
 ]
 
-type Upload = { name: string; url: string } | null
-const toUpload = (f: File): Upload => ({ name: f.name, url: URL.createObjectURL(f) })
+type Upload = { name: string; url: string; file: File; mediaId?: string } | null
+const toUpload = (file: File): Upload => ({
+  name: file.name,
+  url: URL.createObjectURL(file),
+  file,
+})
 
 export function SellerOnboarding() {
-  const { user, submitSellerApplication } = useAuth()
+  const {
+    user,
+    authReady,
+    submitSellerApplication,
+    refreshSellerApplication,
+  } = useAuth()
   const [step, setStep] = useState(0)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
+  const [submissionError, setSubmissionError] = useState('')
 
   const [brandName, setBrandName] = useState('')
   const [handle, setHandle] = useState('')
@@ -57,6 +68,18 @@ export function SellerOnboarding() {
 
   const id = c.idTypes.find((t) => t.value === idType) ?? c.idTypes[0]
 
+  useEffect(() => {
+    if (authReady && user) void refreshSellerApplication()
+  }, [authReady, user?.id, refreshSellerApplication])
+
+  if (!authReady) {
+    return (
+      <div role="status" className="mx-auto flex max-w-lg justify-center px-4 py-20 text-sm text-muted-foreground">
+        Checking your account…
+      </div>
+    )
+  }
+
   if (!user) {
     return (
       <div className="mx-auto flex max-w-lg flex-col items-center gap-4 px-4 py-20 text-center">
@@ -72,21 +95,38 @@ export function SellerOnboarding() {
   }
 
   if (user.seller) {
+    const approved = user.seller.status === 'approved'
+    const rejected = user.seller.status === 'rejected'
     return (
       <div className="mx-auto flex max-w-lg flex-col items-center gap-4 px-4 py-20 text-center">
         <span className="flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary">
           <BadgeCheck className="size-8" aria-hidden="true" />
         </span>
-        <h1 className="font-display text-3xl font-semibold">{`${user.seller.brandName} is under review`}</h1>
+        <h1 className="font-display text-3xl font-semibold">
+          {approved
+            ? `${user.seller.brandName} is approved`
+            : rejected
+              ? `${user.seller.brandName} application needs attention`
+              : `${user.seller.brandName} is under review`}
+        </h1>
         <p className="text-muted-foreground">
-          {`We're verifying your ${getCountry(user.seller.country).idTypes.find((t) => t.value === user.seller?.idType)?.label ?? 'ID'} and business details. This usually takes 24–48 hours. We'll email ${user.seller.businessEmail} when your store is live.`}
+          {approved
+            ? 'Your seller account is ready. Open your seller dashboard to manage your store.'
+            : rejected
+              ? 'Your seller application was not approved. Contact OpenMarketz support for next steps.'
+              : `We're verifying your ${getCountry(user.seller.country).idTypes.find((t) => t.value === user.seller?.idType)?.label ?? 'ID'} and business details. We'll email ${user.seller.businessEmail} when the review is complete.`}
         </p>
         {user.seller.bannerUrl && (
           <div className="relative aspect-[3/1] w-full overflow-hidden rounded-2xl bg-muted">
             <Image src={user.seller.bannerUrl} alt="" fill className="object-cover" unoptimized />
           </div>
         )}
-        <Link href="/" className="flex h-11 items-center rounded-xl bg-foreground px-5 text-sm font-medium text-background">Back to shopping</Link>
+        <Link
+          href={approved ? '/seller' : rejected ? '/support' : '/'}
+          className="flex h-11 items-center rounded-xl bg-foreground px-5 text-sm font-medium text-background"
+        >
+          {approved ? 'Open seller dashboard' : rejected ? 'Contact support' : 'Back to shopping'}
+        </Link>
       </div>
     )
   }
@@ -134,14 +174,63 @@ export function SellerOnboarding() {
       window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
+    if (!logo || !banner || !idDoc || !selfie) return
     setSubmitting(true)
-    await submitSellerApplication({
-      brandName: brandName.trim(), handle, logoUrl: logo?.url, bannerUrl: banner?.url, description: description.trim(), categories: cats,
-      businessType, registrationNumber: regNumber || undefined, businessPhone: `${c.dialCode} ${phone}`, businessEmail: email,
-      country, region, city, address, ownerName: ownerName.trim(), ownerBirthDate: birthDate, idType, idNumber: idNumber.trim(),
-      idDocumentName: idDoc?.name ?? '', bank, accountNumber, accountName: accountName.trim(),
-    })
-    setSubmitting(false)
+    setSubmissionError('')
+    try {
+      const logoAsset = logo.mediaId
+        ? { id: logo.mediaId, url: logo.url }
+        : await uploadMedia(logo.file, 'STORE_LOGO')
+      setLogo({ ...logo, mediaId: logoAsset.id, url: logoAsset.url ?? logo.url })
+
+      const bannerAsset = banner.mediaId
+        ? { id: banner.mediaId, url: banner.url }
+        : await uploadMedia(banner.file, 'STORE_BANNER')
+      setBanner({ ...banner, mediaId: bannerAsset.id, url: bannerAsset.url ?? banner.url })
+
+      const idAsset = idDoc.mediaId
+        ? { id: idDoc.mediaId }
+        : await uploadMedia(idDoc.file, 'KYC_DOCUMENT')
+      setIdDoc({ ...idDoc, mediaId: idAsset.id })
+
+      const selfieAsset = selfie.mediaId
+        ? { id: selfie.mediaId }
+        : await uploadMedia(selfie.file, 'KYC_SELFIE')
+      setSelfie({ ...selfie, mediaId: selfieAsset.id })
+
+      const result = await submitSellerApplication({
+        brandName: brandName.trim(),
+        handle,
+        logoUrl: logoAsset.url ?? logo.url,
+        bannerUrl: bannerAsset.url ?? banner.url,
+        logoMediaId: logoAsset.id,
+        bannerMediaId: bannerAsset.id,
+        description: description.trim(),
+        categories: cats,
+        businessType,
+        registrationNumber: regNumber.trim() || undefined,
+        businessPhone: `${c.dialCode} ${phone}`.trim(),
+        businessEmail: email.trim(),
+        country,
+        region,
+        city: city.trim(),
+        address: address.trim(),
+        ownerName: ownerName.trim(),
+        ownerBirthDate: birthDate,
+        idType,
+        idNumber: idNumber.trim(),
+        idDocumentMediaId: idAsset.id,
+        selfieMediaId: selfieAsset.id,
+        bankName: bank,
+        accountNumber,
+        accountName: accountName.trim(),
+      })
+      if (!result.ok) setSubmissionError(result.error)
+    } catch (error) {
+      setSubmissionError(errorMessage(error))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -193,7 +282,7 @@ export function SellerOnboarding() {
               </fieldset>
               <div className="grid gap-5 sm:grid-cols-[auto_1fr]">
                 <Field label="Brand logo" error={errors.logo}>
-                  <FileDrop label="Logo" accept="image/*" shape="square" hint="Square, 400×400" file={logo} previewUrl={logo?.url} onFile={(f) => setLogo(toUpload(f))} onClear={() => setLogo(null)} invalid={!!errors.logo} />
+                  <FileDrop label="Logo" accept="image/jpeg,image/png,image/webp" shape="square" hint="Square, 400×400" file={logo} previewUrl={logo?.url} onFile={(f) => setLogo(toUpload(f))} onClear={() => setLogo(null)} invalid={!!errors.logo} />
                 </Field>
                 <Field label="Horizontal store banner" error={errors.banner}>
                   {banner ? (
@@ -202,7 +291,7 @@ export function SellerOnboarding() {
                       <button type="button" onClick={() => setBanner(null)} className="absolute right-2 top-2 rounded-lg bg-background/90 px-3 py-1 text-xs font-medium">Replace</button>
                     </div>
                   ) : (
-                    <FileDrop label="Upload banner" accept="image/*" hint="Landscape, at least 1500×500" file={null} onFile={(f) => setBanner(toUpload(f))} onClear={() => setBanner(null)} invalid={!!errors.banner} />
+                    <FileDrop label="Upload banner" accept="image/jpeg,image/png,image/webp" hint="Landscape, at least 1500×500" file={null} onFile={(f) => setBanner(toUpload(f))} onClear={() => setBanner(null)} invalid={!!errors.banner} />
                   )}
                 </Field>
               </div>
@@ -233,10 +322,10 @@ export function SellerOnboarding() {
                   <input id="idnum" value={idNumber} onChange={(e) => setIdNumber(e.target.value)} placeholder={id.placeholder} className={inputClass} aria-invalid={!!errors.idNumber || undefined} />
                 </Field>
                 <Field label="Photo of ID" error={errors.idDoc}>
-                  <FileDrop label="Upload ID" accept="image/*,application/pdf" hint="Front side, JPG/PNG/PDF" file={idDoc} previewUrl={idDoc?.url} onFile={(f) => setIdDoc(toUpload(f))} onClear={() => setIdDoc(null)} invalid={!!errors.idDoc} />
+                  <FileDrop label="Upload ID" accept="image/jpeg,image/png,application/pdf" hint="Front side, JPG/PNG/PDF" file={idDoc} previewUrl={idDoc?.url} onFile={(f) => setIdDoc(toUpload(f))} onClear={() => setIdDoc(null)} invalid={!!errors.idDoc} />
                 </Field>
                 <Field label="Selfie holding ID" error={errors.selfie}>
-                  <FileDrop label="Upload selfie" accept="image/*" hint="Face and ID clearly visible" file={selfie} previewUrl={selfie?.url} onFile={(f) => setSelfie(toUpload(f))} onClear={() => setSelfie(null)} invalid={!!errors.selfie} />
+                  <FileDrop label="Upload selfie" accept="image/jpeg,image/png" hint="Face and ID clearly visible" file={selfie} previewUrl={selfie?.url} onFile={(f) => setSelfie(toUpload(f))} onClear={() => setSelfie(null)} invalid={!!errors.selfie} />
                 </Field>
               </div>
             </>
@@ -307,6 +396,11 @@ export function SellerOnboarding() {
             </div>
           )}
 
+          {submissionError && (
+            <div className="pt-2">
+              <FormAlert>{submissionError}</FormAlert>
+            </div>
+          )}
           <div className="flex gap-3 pt-2">
             {step > 0 && (
               <button type="button" onClick={() => setStep(step - 1)} className="h-12 rounded-xl border px-6 text-sm font-medium hover:bg-muted">Back</button>

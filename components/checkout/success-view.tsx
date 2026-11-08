@@ -5,12 +5,14 @@ import { useSearchParams } from 'next/navigation'
 import { motion } from 'motion/react'
 import { CheckCircle2 } from 'lucide-react'
 import { deliveryOptions, useShop } from '@/components/shop-provider'
-import { formatPrice, products } from '@/lib/data'
+import { formatPrice } from '@/lib/data'
 import { CheckoutSteps } from '@/components/checkout/checkout-ui'
+import { useCatalogProducts } from '@/components/catalog-provider'
 
 export function SuccessView() {
   const params = useSearchParams()
   const { orders } = useShop()
+  const { products } = useCatalogProducts()
   const order = orders.find((o) => o.id === params.get('order')) ?? orders[0]
 
   if (!order) {

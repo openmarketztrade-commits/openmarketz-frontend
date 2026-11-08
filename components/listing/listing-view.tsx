@@ -7,6 +7,7 @@ import { categories, type Product } from '@/lib/data'
 import { ProductCard } from '@/components/product-card'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { FilterPanel, priceRanges, type Filters, emptyFilters } from '@/components/listing/filter-panel'
+import { useCatalogProducts } from '@/components/catalog-provider'
 
 const sortOptions = [
   { value: 'relevance', label: 'Most relevant' },
@@ -19,16 +20,34 @@ const sortOptions = [
 type Sort = (typeof sortOptions)[number]['value']
 
 export function ListingView({
-  products,
+  products: initialProducts,
   showCategoryFilter = false,
   emptyMessage = 'No products match your filters.',
+  categorySlug,
+  sellerSlug,
+  query,
 }: {
   products: Product[]
   showCategoryFilter?: boolean
   emptyMessage?: string
+  categorySlug?: string
+  sellerSlug?: string
+  query?: string
 }) {
   const [filters, setFilters] = useState<Filters>(emptyFilters)
   const [sort, setSort] = useState<Sort>('relevance')
+  const { products: catalogProducts, loaded, error } = useCatalogProducts()
+  const sourceProducts = catalogProducts
+  const searchTerms = query?.trim().toLowerCase().split(/\s+/).filter(Boolean) ?? []
+  const products = (categorySlug
+    ? sourceProducts.filter((product) => product.category === categorySlug)
+    : sellerSlug
+      ? sourceProducts.filter((product) => product.sellerSlug === sellerSlug)
+      : sourceProducts).filter((product) => {
+    if (searchTerms.length === 0) return true
+    const haystack = `${product.name} ${product.brand} ${product.category} ${product.sellerName ?? ''}`.toLowerCase()
+    return searchTerms.every((term) => haystack.includes(term))
+  })
 
   const brands = useMemo(() => Array.from(new Set(products.map((p) => p.brand))).sort(), [products])
   const availableCategories = useMemo(
@@ -90,8 +109,12 @@ export function ListingView({
       <div className="min-w-0">
         <div className="mb-5 flex items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground" aria-live="polite">
-            <span className="font-medium text-foreground">{results.length}</span>
-            {results.length === 1 ? ' product' : ' products'}
+            {!loaded ? 'Loading products…' : error ? 'Products are unavailable.' : (
+              <>
+                <span className="font-medium text-foreground">{results.length}</span>
+                {results.length === 1 ? ' product' : ' products'}
+              </>
+            )}
           </p>
           <div className="flex items-center gap-2">
             <Sheet>
@@ -159,7 +182,11 @@ export function ListingView({
           )}
         </AnimatePresence>
 
-        {results.length === 0 ? (
+        {!loaded ? (
+          <div role="status" className="rounded-3xl border border-dashed p-10 text-center text-sm text-muted-foreground">Loading products…</div>
+        ) : error ? (
+          <div role="alert" className="rounded-3xl border border-dashed p-10 text-center text-sm text-muted-foreground">{`Products could not be loaded: ${error}`}</div>
+        ) : results.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed py-20 text-center">
             <SearchX className="size-8 text-muted-foreground" aria-hidden="true" />
             <p className="mt-4 font-medium">{emptyMessage}</p>

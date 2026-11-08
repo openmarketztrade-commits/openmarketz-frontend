@@ -6,17 +6,20 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { categories, formatPrice } from '@/lib/data'
 import type { Product } from '@/lib/data'
+import { apiRequest, uploadMedia } from '@/lib/api'
 import { useSeller } from '@/components/seller/seller-provider'
 import { PageHeader } from '@/components/seller/seller-shell'
 import { Field, FileDrop, FormAlert, Select, inputClass } from '@/components/forms'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
+import { useCatalogProducts } from '@/components/catalog-provider'
 
 const conditions: NonNullable<Product['condition']>[] = ['Brand new', 'Foreign used', 'Locally used']
 
 export function NewProductForm() {
   const router = useRouter()
   const { addListing } = useSeller()
+  const { refresh: refreshCatalog } = useCatalogProducts()
   const [name, setName] = useState('')
   const [brand, setBrand] = useState('')
   const [category, setCategory] = useState(categories[0].slug)
@@ -32,6 +35,7 @@ export function NewProductForm() {
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string>()
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     if (!file) return setPreview(undefined)
@@ -56,32 +60,79 @@ export function NewProductForm() {
     return Object.keys(e).length === 0
   }
 
-  function submit(status: 'active' | 'draft') {
+  async function submit(status: 'active' | 'draft') {
     if (!validate()) {
       toast.error('Please fix the highlighted fields.')
       return
     }
-    // Object URLs die on unmount, so the demo falls back to the category artwork for the listing image.
-    const image = categories.find((c) => c.slug === category)?.image ?? '/placeholder.svg'
-    addListing({
-      name: name.trim(),
-      brand: brand.trim() || 'Unbranded',
-      category,
-      condition,
-      price: priceNum,
-      compareAt: compareAt ? Number(compareAt) : undefined,
-      stock: Number(stock),
-      description: description.trim(),
-      highlights: highlights.split('\n').map((h) => h.trim()).filter(Boolean),
-      negotiable,
-      minPrice: negotiable && minPrice ? floorNum : undefined,
-      freeDelivery,
-      image,
-      gallery: [image],
-      status,
-    })
-    toast.success(status === 'active' ? 'Your product is live' : 'Draft saved')
-    router.push('/seller/products')
+
+    setSubmitting(true)
+    try {
+      let mediaId: string | undefined
+      if (file) {
+        const asset = await uploadMedia(file, 'PRODUCT')
+        mediaId = asset.id
+      }
+
+      const payload = {
+        name: name.trim(),
+        brand: brand.trim() || 'Unbranded',
+        categorySlug: category,
+        condition: condition === 'Brand new' ? 'BRAND_NEW' : condition === 'Foreign used' ? 'FOREIGN_USED' : 'LOCALLY_USED',
+        price: priceNum,
+        compareAt: compareAt ? Number(compareAt) : undefined,
+        stock: Number(stock),
+        description: description.trim(),
+        highlights: highlights.split('\n').map((h) => h.trim()).filter(Boolean),
+        specifications: {},
+        negotiable,
+        minPrice: negotiable && minPrice ? floorNum : undefined,
+        freeDelivery,
+        mediaIds: mediaId ? [mediaId] : [],
+        status: status === 'active' ? 'ACTIVE' : 'DRAFT',
+      }
+
+      const created = await apiRequest<Record<string, unknown>>('seller/products', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+
+      const image = (created?.image as string | undefined) ?? categories.find((c) => c.slug === category)?.image ?? '/placeholder.svg'
+      const gallery = Array.isArray(created?.gallery) && created.gallery.length ? (created.gallery as string[]) : [image]
+      addListing({
+        id: String(created?.id ?? ''),
+        slug: String(created?.slug ?? ''),
+        name: String(created?.name ?? name.trim()),
+        brand: String(created?.brand ?? (brand.trim() || 'Unbranded')),
+        category: String(created?.category ?? category),
+        condition: (created?.condition as Product['condition']) ?? condition,
+        price: Number(created?.price ?? priceNum),
+        compareAt: created?.compareAt ? Number(created.compareAt) : undefined,
+        stock: Number(created?.stock ?? Number(stock)),
+        description: String(created?.description ?? description.trim()),
+        highlights: Array.isArray(created?.highlights) ? (created.highlights as string[]) : highlights.split('\n').map((h) => h.trim()).filter(Boolean),
+        negotiable: Boolean(created?.negotiable ?? negotiable),
+        minPrice: created?.minPrice ? Number(created.minPrice) : negotiable && minPrice ? floorNum : undefined,
+        freeDelivery: Boolean(created?.freeDelivery ?? freeDelivery),
+        image,
+        gallery,
+        status,
+      })
+
+      if (status === 'active') {
+        try {
+          await refreshCatalog()
+        } catch (error) {
+          console.error('Product was posted, but the public catalog could not be refreshed.', error)
+        }
+      }
+      toast.success(status === 'active' ? 'Your product is live' : 'Draft saved')
+      router.push('/seller/products')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The product could not be posted.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -91,7 +142,7 @@ export function NewProductForm() {
         noValidate
         onSubmit={(e) => {
           e.preventDefault()
-          submit('active')
+          void submit('active')
         }}
         className="grid gap-6 lg:grid-cols-[1fr_300px]"
       >

@@ -5,14 +5,16 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { ChevronRight, Package } from 'lucide-react'
 import { useShop } from '@/components/shop-provider'
-import { formatPrice, products } from '@/lib/data'
+import { formatPrice } from '@/lib/data'
 import { StatusBadge } from '@/components/orders/order-ui'
 import { cn } from '@/lib/utils'
+import { useCatalogProducts } from '@/components/catalog-provider'
 
 const filters = ['All', 'In progress', 'Delivered'] as const
 
 export function OrdersList() {
   const { orders } = useShop()
+  const { products } = useCatalogProducts()
   const [filter, setFilter] = useState<(typeof filters)[number]>('All')
   const visible = orders.filter((o) =>
     filter === 'All' ? true : filter === 'Delivered' ? o.status === 'delivered' : o.status !== 'delivered',

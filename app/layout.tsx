@@ -10,6 +10,7 @@ import { WishlistProvider } from '@/components/wishlist-provider'
 import { Toaster } from '@/components/ui/sonner'
 import { OpenMarketProvider } from '@/components/open-market/open-market-provider'
 import { SellerProvider } from '@/components/seller/seller-provider'
+import { CatalogProvider } from '@/components/catalog-provider'
 import { SupportWidget } from '@/components/support/support-widget'
 import './globals.css'
 
@@ -45,11 +46,12 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${display.variable}`}>
+    <html lang="en" data-scroll-behavior="smooth" className={`${inter.variable} ${display.variable}`}>
       <body className="flex min-h-dvh flex-col antialiased">
         <NotificationsProvider>
           <AuthProvider>
-            <ShopProvider>
+            <CatalogProvider>
+              <ShopProvider>
               <WishlistProvider>
                 <OpenMarketProvider>
                   <SellerProvider>
@@ -61,7 +63,8 @@ export default function RootLayout({
                   </SellerProvider>
                 </OpenMarketProvider>
               </WishlistProvider>
-            </ShopProvider>
+              </ShopProvider>
+            </CatalogProvider>
           </AuthProvider>
         </NotificationsProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}

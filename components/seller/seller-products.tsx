@@ -20,7 +20,7 @@ const filters: { id: 'all' | ListingStatus; label: string }[] = [
 ]
 
 export function SellerProducts() {
-  const { listings, setListingStatus, updateStock } = useSeller()
+  const { listings, listingsLoaded, listingsError, setListingStatus, updateStock } = useSeller()
   const [filter, setFilter] = useState<(typeof filters)[number]['id']>('all')
   const [query, setQuery] = useState('')
 
@@ -33,7 +33,7 @@ export function SellerProducts() {
     <div>
       <PageHeader
         title="Products"
-        description={`${listings.filter((l) => l.status === 'active').length} live listings`}
+        description={listingsLoaded ? `${listings.filter((l) => l.status === 'active').length} live listings` : 'Loading your products…'}
         action={
           <Link href="/seller/products/new" className="flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground">
             <Plus className="size-4" aria-hidden="true" />
@@ -64,7 +64,11 @@ export function SellerProducts() {
         </label>
       </div>
 
-      {shown.length === 0 ? (
+      {!listingsLoaded ? (
+        <p role="status" className="rounded-3xl border border-dashed p-10 text-center text-sm text-muted-foreground">Loading your products…</p>
+      ) : listingsError ? (
+        <p role="alert" className="rounded-3xl border border-dashed p-10 text-center text-sm text-muted-foreground">{`Your products could not be loaded: ${listingsError}`}</p>
+      ) : shown.length === 0 ? (
         <div className="rounded-3xl border border-dashed p-10 text-center">
           <p className="font-medium">No products here yet</p>
           <Link href="/seller/products/new" className="mt-2 inline-block text-sm font-semibold text-primary hover:underline">Post your first product</Link>

@@ -19,8 +19,15 @@ const nav = [
 ]
 
 export function RequireAuth({ children, reason = 'view your account' }: { children: React.ReactNode; reason?: string }) {
-  const { user } = useAuth()
+  const { user, authReady } = useAuth()
   const pathname = usePathname()
+  if (!authReady) {
+    return (
+      <div role="status" className="mx-auto flex max-w-md justify-center px-4 py-24 text-sm text-muted-foreground">
+        Checking your account…
+      </div>
+    )
+  }
   if (user) return <>{children}</>
   return (
     <div className="mx-auto flex max-w-md flex-col items-center gap-4 px-4 py-24 text-center">

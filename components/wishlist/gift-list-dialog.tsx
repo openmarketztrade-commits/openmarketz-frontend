@@ -3,9 +3,9 @@
 import Image from 'next/image'
 import { useState } from 'react'
 import { Check } from 'lucide-react'
-import { products } from '@/lib/data'
 import { useAuth } from '@/components/auth-provider'
 import { useShop } from '@/components/shop-provider'
+import { useCatalogProducts } from '@/components/catalog-provider'
 import { occasions, useWishlists, type GiftList, type Occasion } from '@/components/wishlist-provider'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { fieldClass } from '@/components/checkout/checkout-ui'
@@ -22,6 +22,7 @@ export function GiftListDialog({
 }) {
   const { user } = useAuth()
   const { wishlist } = useShop()
+  const { products } = useCatalogProducts()
   const { createList, updateList } = useWishlists()
   const [name, setName] = useState(list?.name ?? '')
   const [occasion, setOccasion] = useState<Occasion>(list?.occasion ?? 'birthday')

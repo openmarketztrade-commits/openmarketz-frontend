@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Zap } from 'lucide-react'
-import { getDeals } from '@/lib/data'
+import { useCatalogProducts } from '@/components/catalog-provider'
 import { ProductCard } from '@/components/product-card'
 import { SectionHeading } from '@/components/section-heading'
 
@@ -21,7 +21,12 @@ function useCountdown() {
 
 export function FlashDeals() {
   const remaining = useCountdown()
-  const deals = getDeals().slice(0, 5)
+  const { products } = useCatalogProducts()
+  const deals = products.filter((product) => product.compareAt).sort((a, b) => {
+    const discountA = ((a.compareAt! - a.price) / a.compareAt!) * 100
+    const discountB = ((b.compareAt! - b.price) / b.compareAt!) * 100
+    return discountB - discountA
+  }).slice(0, 5)
   const parts =
     remaining === null
       ? ['--', '--', '--']

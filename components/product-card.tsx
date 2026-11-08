@@ -71,7 +71,7 @@ export function ProductCard({ product, priority = false }: { product: Product; p
       </div>
 
       <div className="flex flex-1 flex-col gap-1.5 pt-3">
-        {seller && (
+        {seller ? (
           <Link
             href={`/store/${seller.slug}`}
             className="flex w-fit items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-primary"
@@ -79,7 +79,7 @@ export function ProductCard({ product, priority = false }: { product: Product; p
             {seller.name}
             {seller.verified && <BadgeCheck className="size-3.5 text-primary" aria-label="Verified seller" />}
           </Link>
-        )}
+        ) : product.sellerName ? <p className="text-xs text-muted-foreground">{product.sellerName}</p> : null}
         <h3 className="line-clamp-2 text-sm font-medium leading-snug text-foreground text-pretty">
           <Link href={`/product/${product.slug}`} className="hover:underline underline-offset-2">
             {product.name}

@@ -5,8 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useId, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ArrowUpRight, Search, TrendingUp, X } from 'lucide-react'
-import { categories, formatPrice, searchProducts } from '@/lib/data'
+import { categories, formatPrice } from '@/lib/data'
 import { cn } from '@/lib/utils'
+import { useCatalogProducts } from '@/components/catalog-provider'
 
 const popular = ['Smartphone', 'Ankara dress', 'Headphones', 'Vitamin C serum', 'Blender']
 
@@ -17,9 +18,17 @@ export function SearchBar({ className }: { className?: string }) {
   const [open, setOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const listId = useId()
+  const { products } = useCatalogProducts()
 
   const trimmed = query.trim()
-  const productMatches = useMemo(() => (trimmed ? searchProducts(trimmed).slice(0, 5) : []), [trimmed])
+  const productMatches = useMemo(() => {
+    if (!trimmed) return []
+    const terms = trimmed.toLowerCase().split(/\s+/)
+    return products.filter((product) => {
+      const haystack = `${product.name} ${product.brand} ${product.category} ${product.sellerName ?? ''}`.toLowerCase()
+      return terms.every((term) => haystack.includes(term))
+    }).slice(0, 5)
+  }, [products, trimmed])
   const categoryMatches = useMemo(
     () => (trimmed ? categories.filter((c) => c.name.toLowerCase().includes(trimmed.toLowerCase())).slice(0, 3) : []),
     [trimmed],

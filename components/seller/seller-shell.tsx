@@ -4,13 +4,65 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { BadgeCheck, Bell, Handshake, LayoutDashboard, Megaphone, Package, Plus, Truck } from 'lucide-react'
 import { useSeller } from '@/components/seller/seller-provider'
+import { useAuth } from '@/components/auth-provider'
 import { cn } from '@/lib/utils'
 
 export function SellerShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const { user, authReady } = useAuth()
   const { store, bargains, orders, unreadAlerts } = useSeller()
   const pendingBargains = bargains.filter((b) => b.status === 'pending').length
   const toShip = orders.filter((o) => o.status === 'awaiting_dispatch' || o.status === 'packed').length
+
+  if (!authReady) {
+    return (
+      <div role="status" className="mx-auto max-w-7xl px-4 py-20 text-center text-sm text-muted-foreground">
+        Checking your seller account…
+      </div>
+    )
+  }
+
+  if (!user) {
+    return (
+      <div className="mx-auto flex max-w-lg flex-col items-center gap-4 px-4 py-20 text-center">
+        <h1 className="font-display text-3xl font-semibold">Sign in to your seller account</h1>
+        <p className="text-muted-foreground">Sign in or create a free account to start selling on OpenMarketz.</p>
+        <div className="flex gap-3">
+          <Link href="/signup?next=/sell" className="flex h-11 items-center rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground">Create account</Link>
+          <Link href="/login?next=/sell" className="flex h-11 items-center rounded-xl border px-5 text-sm font-semibold hover:bg-muted">Sign in</Link>
+        </div>
+      </div>
+    )
+  }
+
+  if (user.seller?.status !== 'approved') {
+    const pending = user.seller?.status === 'under_review'
+    const rejected = user.seller?.status === 'rejected'
+    return (
+      <div className="mx-auto flex max-w-lg flex-col items-center gap-4 px-4 py-20 text-center">
+        <h1 className="font-display text-3xl font-semibold">
+          {pending
+            ? 'Your application is under review'
+            : rejected
+              ? 'Your application needs attention'
+              : 'Apply to become a seller'}
+        </h1>
+        <p className="text-muted-foreground">
+          {pending
+            ? `We've received your application for ${user.seller?.brandName}. We'll let you know when the review is complete.`
+            : rejected
+              ? 'Contact OpenMarketz support for next steps on your seller application.'
+              : 'Submit your seller application and our team will review your business details.'}
+        </p>
+        <Link
+          href={rejected ? '/support' : '/sell'}
+          className="flex h-11 items-center rounded-xl bg-foreground px-5 text-sm font-medium text-background"
+        >
+          {rejected ? 'Contact support' : pending ? 'View application status' : 'Start seller application'}
+        </Link>
+      </div>
+    )
+  }
 
   const nav = [
     { href: '/seller', label: 'Overview', icon: LayoutDashboard, exact: true },

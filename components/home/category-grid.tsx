@@ -1,10 +1,14 @@
+'use client'
+
 import Image from 'next/image'
 import Link from 'next/link'
-import { categories, getProductsByCategory } from '@/lib/data'
+import { categories } from '@/lib/data'
 import { Reveal } from '@/components/reveal'
 import { SectionHeading } from '@/components/section-heading'
+import { useCatalogProducts } from '@/components/catalog-provider'
 
 export function CategoryGrid() {
+  const { products } = useCatalogProducts()
   return (
     <section className="mx-auto max-w-7xl px-4 pt-20 md:px-6" aria-labelledby="categories-heading">
       <SectionHeading eyebrow="Explore" title="Shop by category" href="/products" linkLabel="All products" />
@@ -25,7 +29,7 @@ export function CategoryGrid() {
               <span className="absolute inset-0 bg-gradient-to-t from-foreground/70 via-foreground/10 to-transparent" />
               <span className="relative font-medium text-background">{c.name}</span>
               <span className="relative text-xs text-background/75">
-                {`${getProductsByCategory(c.slug).length} products`}
+                {`${products.filter((product) => product.category === c.slug).length} products`}
               </span>
             </Link>
           </Reveal>

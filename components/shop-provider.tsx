@@ -1,9 +1,28 @@
 'use client'
 
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import type { Socket } from 'socket.io-client'
 import { toast } from 'sonner'
-import { formatPrice, getProduct, getSeller, products, type Product } from '@/lib/data'
+import { formatPrice, getSeller, type Product } from '@/lib/data'
 import { useNotifications } from '@/components/notifications-provider'
+import { useAuth } from '@/components/auth-provider'
+import { useCatalogProducts } from '@/components/catalog-provider'
+import {
+  createBuyerOffer,
+  createConversation,
+  connectRealtime,
+  getAccessToken,
+  getPublicProduct,
+  listBuyerOffers,
+  listConversations,
+  markConversationRead,
+  respondToOffer as respondToOfferApi,
+  sendConversationMessage,
+  uploadMedia,
+  type ApiConversation,
+  type ApiMessage,
+  type ApiOffer,
+} from '@/lib/api'
 
 export type CartItem = {
   key: string
@@ -12,7 +31,7 @@ export type CartItem = {
   options: Record<string, string>
 }
 
-export type OfferStatus = 'pending' | 'accepted' | 'declined'
+export type OfferStatus = 'pending' | 'accepted' | 'declined' | 'countered'
 
 export type Offer = {
   id: string
@@ -22,9 +41,17 @@ export type Offer = {
   offerPrice: number
   quantity: number
   message?: string
-  voiceNote?: { url: string; duration: number }
+  voiceNote?: { url: string; duration: number; blob?: Blob }
   status: OfferStatus
   createdAt: number
+  buyerId?: string
+  buyerName?: string
+  sellerName?: string
+  role?: 'buyer' | 'seller'
+  counterPrice?: number
+  productSlug?: string
+  productName?: string
+  productImage?: string
 }
 
 export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed'
@@ -33,7 +60,7 @@ export type ChatMessage = {
   id: string
   from: 'buyer' | 'seller' | 'system'
   text?: string
-  voiceNote?: { url: string; duration: number }
+  voiceNote?: { url: string; duration: number; blob?: Blob }
   image?: string
   offerId?: string
   status?: MessageStatus
@@ -47,6 +74,10 @@ export type Conversation = {
   messages: ChatMessage[]
   unread: number
   typing?: boolean
+  sellerName?: string
+  productName?: string
+  productImage?: string
+  productPrice?: number
 }
 
 type OutgoingMessage = Pick<ChatMessage, 'text' | 'voiceNote' | 'image'>
@@ -92,11 +123,11 @@ type ShopContextValue = {
   priceFor: (product: Product) => number
   acceptedOfferFor: (productId: string) => Offer | undefined
   offers: Offer[]
-  submitOffer: (input: Omit<Offer, 'id' | 'status' | 'createdAt' | 'sellerId' | 'listPrice'> & { product: Product }) => Offer
-  respondToOffer: (offerId: string, status: Exclude<OfferStatus, 'pending'>) => void
+  submitOffer: (input: Omit<Offer, 'id' | 'status' | 'createdAt' | 'sellerId' | 'listPrice'> & { product: Product }) => Promise<Offer>
+  respondToOffer: (offerId: string, action: 'accept' | 'decline' | 'counter', counterPrice?: number) => Promise<void>
   conversations: Conversation[]
-  openConversation: (product: Product) => string
-  sendMessage: (conversationId: string, message: OutgoingMessage) => void
+  openConversation: (product: Product) => Promise<string>
+  sendMessage: (conversationId: string, message: OutgoingMessage) => Promise<void>
   retryMessage: (conversationId: string, messageId: string) => void
   markRead: (conversationId: string) => void
   addresses: Address[]
@@ -125,12 +156,6 @@ const uid = (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2,
 const cartKey = (productId: string, options: Record<string, string>) =>
   `${productId}::${Object.entries(options).sort().map(([k, v]) => `${k}=${v}`).join('|')}`
 
-const sellerReplies = [
-  'Thanks for reaching out! Yes, this item is available. Any questions?',
-  'Hello! It is in stock and we can deliver this week.',
-  'Good day. Feel free to send an offer if you want a better price.',
-]
-
 const demoAddress: Address = {
   id: 'addr_home',
   fullName: 'Adaeze Okafor',
@@ -142,77 +167,216 @@ const demoAddress: Address = {
   label: 'Home',
 }
 
-function seedConversations(): Conversation[] {
-  const mins = (m: number) => Date.now() - m * 60 * 1000
-  return [
-    {
-      id: 'conv_seed_1',
-      sellerId: 's1',
-      productId: 'p1',
-      unread: 1,
-      messages: [
-        { id: 'm1', from: 'buyer', text: 'Hi, is the Aurora X5 available in Midnight Blue?', status: 'read', at: mins(190) },
-        { id: 'm2', from: 'seller', text: 'Good afternoon! Yes, we have 3 units in Midnight Blue. All come sealed with a 12-month warranty.', at: mins(180) },
-        { id: 'm3', from: 'buyer', text: 'Great. Can you deliver to Lekki by Friday?', status: 'read', at: mins(150) },
-        { id: 'm4', from: 'seller', text: 'Yes, express delivery to Lekki arrives in 1–2 days. Order before 4pm for same-day dispatch.', at: mins(40) },
-      ],
-    },
-    {
-      id: 'conv_seed_2',
-      sellerId: 's2',
-      productId: 'p7',
-      unread: 0,
-      messages: [
-        { id: 'm5', from: 'buyer', text: 'Do you have the Adé dress in size 12?', status: 'read', at: mins(60 * 26) },
-        { id: 'm6', from: 'seller', text: 'We do! It runs true to size. Would you like me to share a fit video?', at: mins(60 * 25) },
-        { id: 'm7', from: 'system', text: 'Ankara House shared their return policy: free exchanges within 7 days.', at: mins(60 * 25) },
-      ],
-    },
-  ]
+function mapApiOffer(offer: ApiOffer, userId: string): Offer {
+  return {
+    id: offer.id,
+    productId: offer.productId,
+    sellerId: offer.sellerId,
+    buyerId: offer.buyerId,
+    buyerName: offer.buyer.name,
+    sellerName: offer.sellerName,
+    role: offer.buyerId === userId ? 'buyer' : 'seller',
+    listPrice: offer.listPrice,
+    offerPrice: offer.offerPrice,
+    counterPrice: offer.counterPrice,
+    quantity: offer.quantity,
+    message: offer.message,
+    voiceNote: offer.voiceNote,
+    status: offer.status === 'expired' || offer.status === 'withdrawn' ? 'declined' : offer.status,
+    createdAt: new Date(offer.createdAt).getTime(),
+    productSlug: offer.product.slug,
+    productName: offer.product.name,
+    productImage: offer.product.image,
+  }
 }
 
-function seedOrders(): Order[] {
-  const p1 = products.find((p) => p.slug === 'hush-anc-headphones')
-  const p2 = products.find((p) => p.slug === 'glow-vitamin-c-serum')
-  if (!p1 || !p2) return []
-  const subtotal = p1.price + p2.price * 2
-  return [
-    {
-      id: 'OMZ-48213',
-      items: [
-        { productId: p1.id, quantity: 1, unitPrice: p1.price, options: { Colour: 'Sage' } },
-        { productId: p2.id, quantity: 2, unitPrice: p2.price, options: {} },
-      ],
-      address: demoAddress,
-      delivery: 'standard',
-      payment: 'card',
-      subtotal,
-      deliveryFee: 0,
-      serviceFee: Math.round(subtotal * SERVICE_FEE_RATE),
-      total: subtotal + Math.round(subtotal * SERVICE_FEE_RATE),
-      status: 'shipped',
-      placedAt: Date.now() - 1000 * 60 * 60 * 30,
-    },
-  ]
+function mapApiMessage(message: ApiMessage): ChatMessage {
+  const mediaUrl = message.mediaUrl
+  return {
+    id: message.id,
+    from: message.from,
+    text: message.text,
+    offerId: message.offerId,
+    voiceNote: mediaUrl && message.mediaResourceType === 'raw' ? { url: mediaUrl, duration: 0 } : undefined,
+    image: mediaUrl && message.mediaResourceType !== 'raw' ? mediaUrl : undefined,
+    at: new Date(message.at).getTime(),
+    status: 'sent',
+  }
+}
+
+function mapApiConversation(conversation: ApiConversation, isSeller: boolean): Conversation {
+  return {
+    id: conversation.id,
+    sellerId: conversation.sellerId ?? '',
+    productId: conversation.productId ?? '',
+    sellerName: isSeller
+      ? conversation.otherParticipant?.name ?? conversation.seller?.name
+      : conversation.seller?.name ?? conversation.otherParticipant?.name,
+    productName: conversation.product?.name,
+    productImage: conversation.product?.image ?? undefined,
+    productPrice: conversation.product?.price,
+    unread: conversation.unread,
+    messages: conversation.messages.map(mapApiMessage),
+  }
 }
 
 export function ShopProvider({ children }: { children: React.ReactNode }) {
+  const { user, authReady } = useAuth()
+  const { products } = useCatalogProducts()
   const [cart, setCart] = useState<CartItem[]>([])
   const [wishlist, setWishlist] = useState<Set<string>>(new Set())
   const [offers, setOffers] = useState<Offer[]>([])
   const { notify } = useNotifications()
-  const [conversations, setConversations] = useState<Conversation[]>(seedConversations)
+  const [conversations, setConversations] = useState<Conversation[]>([])
   const [addresses, setAddresses] = useState<Address[]>([demoAddress])
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(demoAddress.id)
   const [delivery, setDelivery] = useState<DeliveryMethod>('standard')
-  const [orders, setOrders] = useState<Order[]>(seedOrders)
+  const [orders, setOrders] = useState<Order[]>([])
   const offersRef = useRef(offers)
   offersRef.current = offers
+  const conversationsRef = useRef(conversations)
+  conversationsRef.current = conversations
+  const realtimeRef = useRef<Socket | null>(null)
+  const isSeller = user?.seller?.status === 'approved'
+
+  const refreshNegotiations = useCallback(async (showError = true) => {
+    if (!user) return
+    try {
+      const [offerResponse, conversationResponse] = await Promise.all([
+        listBuyerOffers(),
+        listConversations(),
+      ])
+      const nextOffers = offerResponse.items.map((offer) => mapApiOffer(offer, user.id))
+      const nextConversations = conversationResponse.map((conversation) => mapApiConversation(conversation, isSeller))
+      setOffers(nextOffers)
+      setConversations(nextConversations)
+      const socket = realtimeRef.current
+      if (socket?.connected) {
+        for (const conversation of nextConversations) {
+          socket.emit('conversation:join', { conversationId: conversation.id })
+        }
+      }
+    } catch (error) {
+      console.error('Unable to load marketplace offers and conversations.', error)
+      if (showError) {
+        toast.error(error instanceof Error ? error.message : 'Your offers and messages could not be loaded.')
+      }
+    }
+  }, [isSeller, user])
+
+  useEffect(() => {
+    if (!authReady) return
+    if (!user) {
+      realtimeRef.current?.disconnect()
+      realtimeRef.current = null
+      setOffers([])
+      setConversations([])
+      return
+    }
+    void refreshNegotiations()
+
+    const token = getAccessToken()
+    if (!token) return
+
+    const socket = connectRealtime()
+    realtimeRef.current = socket
+    const joinLoadedConversations = () => {
+      for (const conversation of conversationsRef.current) {
+        socket.emit('conversation:join', { conversationId: conversation.id })
+      }
+    }
+    const onMessage = (message: ApiMessage & { conversationId: string }) => {
+      const mapped = mapApiMessage(message)
+      setConversations((previous) => {
+        const found = previous.some((conversation) => conversation.id === message.conversationId)
+        if (!found) {
+          void refreshNegotiations(false)
+          return previous
+        }
+        return previous.map((conversation) =>
+          conversation.id !== message.conversationId
+            ? conversation
+            : conversation.messages.some((item) => item.id === mapped.id)
+              ? conversation
+              : {
+                  ...conversation,
+                  unread: mapped.from === (isSeller ? 'buyer' : 'seller')
+                    ? conversation.unread + 1
+                    : conversation.unread,
+                  messages: [...conversation.messages, mapped],
+                },
+        )
+      })
+    }
+    const onOffer = (offer: ApiOffer) => {
+      const mapped = mapApiOffer(offer, user.id)
+      setOffers((previous) => [
+        mapped,
+        ...previous.filter((item) => item.id !== mapped.id),
+      ])
+    }
+    const onConversationAvailable = () => {
+      void refreshNegotiations(false)
+    }
+    const onConversationRead = (event: { conversationId: string; userId: string }) => {
+      if (event.userId === user.id) return
+      const ownRole = isSeller ? 'seller' : 'buyer'
+      setConversations((previous) =>
+        previous.map((conversation) =>
+          conversation.id !== event.conversationId
+            ? conversation
+            : {
+                ...conversation,
+                messages: conversation.messages.map((message) =>
+                  message.from === ownRole && message.status !== 'failed'
+                    ? { ...message, status: 'read' }
+                    : message,
+                ),
+              },
+        ),
+      )
+    }
+
+    socket.on('connect', joinLoadedConversations)
+    socket.on('message:new', onMessage)
+    socket.on('offer:updated', onOffer)
+    socket.on('conversation:available', onConversationAvailable)
+    socket.on('conversation:read', onConversationRead)
+    socket.on('connect_error', (error: Error) => {
+      console.error('Realtime connection failed.', error.message)
+    })
+
+    return () => {
+      socket.removeAllListeners()
+      socket.disconnect()
+      if (realtimeRef.current === socket) realtimeRef.current = null
+    }
+  }, [authReady, user, isSeller, refreshNegotiations])
+
+  const requireSignIn = useCallback(() => {
+    if (user) return
+    toast.error('Sign in to contact sellers or make an offer.')
+    throw new Error('Sign in to continue.')
+  }, [user])
+
+  const resolveApiProduct = useCallback(async (product: Product) => {
+    const apiProduct = await getPublicProduct(product.slug)
+    return apiProduct
+  }, [])
 
   const acceptedOfferFor = useCallback(
     (productId: string) =>
-      offers.filter((o) => o.productId === productId && o.status === 'accepted').sort((a, b) => b.createdAt - a.createdAt)[0],
-    [offers],
+      offers
+        .filter((o) => {
+          const productSlug = products.find((product) => product.id === productId)?.slug
+          return (
+            o.role !== 'seller' &&
+            (o.productId === productId || (!!productSlug && o.productSlug === productSlug)) &&
+            o.status === 'accepted'
+          )
+        })
+        .sort((a, b) => b.createdAt - a.createdAt)[0],
+    [offers, products],
   )
 
   const priceFor = useCallback(
@@ -230,7 +394,7 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
       return [...prev, { key, productId: product.id, quantity: Math.min(product.stock, quantity), options }]
     })
     toast.success('Added to cart', { description: product.name, action: { label: 'View cart', onClick: () => (window.location.href = '/cart') } })
-  }, [])
+  }, [products])
 
   const updateQuantity = useCallback((key: string, quantity: number) => {
     setCart((prev) =>
@@ -240,7 +404,7 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
         return { ...i, quantity: Math.max(1, Math.min(stock, quantity)) }
       }),
     )
-  }, [])
+  }, [products])
 
   const removeFromCart = useCallback((key: string) => {
     setCart((prev) => prev.filter((i) => i.key !== key))
@@ -260,34 +424,26 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
     })
   }, [])
 
-  const pushMessage = useCallback((sellerId: string, productId: string, message: Omit<ChatMessage, 'id' | 'at'>) => {
-    let conversationId = ''
-    setConversations((prev) => {
-      const existing = prev.find((c) => c.sellerId === sellerId && c.productId === productId)
-      const msg: ChatMessage = { ...message, id: uid('msg'), at: Date.now() }
-      if (existing) {
-        conversationId = existing.id
-        return prev.map((c) =>
-          c.id === existing.id
-            ? { ...c, messages: [...c.messages, msg], unread: message.from === 'seller' ? c.unread + 1 : c.unread }
-            : c,
-        )
-      }
-      conversationId = uid('conv')
-      return [{ id: conversationId, sellerId, productId, messages: [msg], unread: message.from === 'seller' ? 1 : 0 }, ...prev]
-    })
-    return conversationId
+  const upsertConversation = useCallback((conversation: Conversation) => {
+    setConversations((prev) => [
+      conversation,
+      ...prev.filter((item) => item.id !== conversation.id),
+    ])
   }, [])
 
   const openConversation = useCallback(
-    (product: Product) => {
-      const existing = conversations.find((c) => c.productId === product.id && c.sellerId === product.sellerId)
+    async (product: Product) => {
+      requireSignIn()
+      const apiProduct = await resolveApiProduct(product)
+      const existing = conversations.find((conversation) => conversation.productId === apiProduct.id)
       if (existing) return existing.id
-      const id = uid('conv')
-      setConversations((prev) => [{ id, sellerId: product.sellerId, productId: product.id, messages: [], unread: 0 }, ...prev])
-      return id
+
+      const created = await createConversation({ productId: apiProduct.id })
+      const mapped = mapApiConversation(created, isSeller)
+      upsertConversation(mapped)
+      return mapped.id
     },
-    [conversations],
+    [conversations, requireSignIn, resolveApiProduct, upsertConversation, user],
   )
 
   const patchConversation = useCallback((conversationId: string, fn: (c: Conversation) => Conversation) => {
@@ -303,122 +459,136 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
     [patchConversation],
   )
 
-  const deliver = useCallback(
-    (conversationId: string, messageId: string) => {
-      window.setTimeout(() => {
-        if (typeof navigator !== 'undefined' && !navigator.onLine) {
-          setStatus(conversationId, messageId, 'failed')
-          return
-        }
-        setStatus(conversationId, messageId, 'sent')
-        window.setTimeout(() => setStatus(conversationId, messageId, 'delivered'), 500)
-        window.setTimeout(() => {
-          patchConversation(conversationId, (c) => ({
-            ...c,
-            typing: true,
-            messages: c.messages.map((m) => (m.from === 'buyer' && m.status !== 'failed' ? { ...m, status: 'read' } : m)),
-          }))
-        }, 1200)
-        window.setTimeout(() => {
-          const reply = sellerReplies[Math.floor(Math.random() * sellerReplies.length)]
-          let sellerId = ''
-          patchConversation(conversationId, (c) => {
-            sellerId = c.sellerId
-            return {
-              ...c,
-              typing: false,
-              unread: c.unread + 1,
-              messages: [...c.messages, { id: uid('msg'), from: 'seller', text: reply, at: Date.now() }],
-            }
-          })
-          const seller = getSeller(sellerId)
-          notify({ type: 'message', title: `New message from ${seller?.name ?? 'a seller'}`, body: reply, href: `/messages?c=${conversationId}` })
-        }, 2800)
-      }, 450)
-    },
-    [setStatus, patchConversation, notify],
-  )
-
   const sendMessage = useCallback(
-    (conversationId: string, message: OutgoingMessage) => {
+    async (conversationId: string, message: OutgoingMessage) => {
       const id = uid('msg')
+      try {
+        requireSignIn()
+      } catch {
+        return
+      }
       patchConversation(conversationId, (c) => ({
         ...c,
-        messages: [...c.messages, { ...message, from: 'buyer', id, status: 'sending', at: Date.now() }],
+        messages: [...c.messages, { ...message, from: isSeller ? 'seller' : 'buyer', id, status: 'sending', at: Date.now() }],
       }))
-      deliver(conversationId, id)
+      try {
+        let mediaId: string | undefined
+        if (message.voiceNote?.blob) {
+          const voiceFile = new File([message.voiceNote.blob], 'voice-note.webm', {
+            type: message.voiceNote.blob.type || 'audio/webm',
+          })
+          mediaId = (await uploadMedia(voiceFile, 'MESSAGE')).id
+        }
+        if (message.image) {
+          throw new Error('Image messages are not available yet. Send text or a voice note instead.')
+        }
+        const sent = await sendConversationMessage(conversationId, {
+          text: message.text,
+          mediaId,
+        })
+        patchConversation(conversationId, (conversation) => ({
+          ...conversation,
+          messages: [
+            ...conversation.messages.filter((item) => item.id !== id && item.id !== sent.id),
+            mapApiMessage(sent),
+          ],
+        }))
+      } catch (error) {
+        setStatus(conversationId, id, 'failed')
+        toast.error(error instanceof Error ? error.message : 'Your message could not be sent.')
+      }
     },
-    [patchConversation, deliver],
+    [isSeller, patchConversation, requireSignIn, setStatus],
   )
 
   const retryMessage = useCallback(
     (conversationId: string, messageId: string) => {
-      setStatus(conversationId, messageId, 'sending')
-      deliver(conversationId, messageId)
+      const message = conversations.find((item) => item.id === conversationId)?.messages.find((item) => item.id === messageId)
+      if (!message) return
+      patchConversation(conversationId, (conversation) => ({
+        ...conversation,
+        messages: conversation.messages.filter((item) => item.id !== messageId),
+      }))
+      void sendMessage(conversationId, { text: message.text, voiceNote: message.voiceNote, image: message.image })
     },
-    [setStatus, deliver],
+    [conversations, patchConversation, sendMessage],
   )
 
-  const markRead = useCallback((conversationId: string) => {
+  const markRead = useCallback(async (conversationId: string) => {
     setConversations((prev) => prev.map((c) => (c.id === conversationId && c.unread ? { ...c, unread: 0 } : c)))
+    try {
+      await markConversationRead(conversationId)
+    } catch (error) {
+      console.error('Unable to mark the conversation as read.', error)
+    }
   }, [])
 
   const submitOffer: ShopContextValue['submitOffer'] = useCallback(
-    ({ product, ...input }) => {
-      const offer: Offer = {
-        ...input,
-        id: uid('offer'),
-        sellerId: product.sellerId,
-        listPrice: product.price,
-        status: 'pending',
-        createdAt: Date.now(),
+    async ({ product, ...input }) => {
+      requireSignIn()
+      const apiProduct = await resolveApiProduct(product)
+      let mediaId: string | undefined
+      if (input.voiceNote?.blob) {
+        const voiceFile = new File([input.voiceNote.blob], 'offer-voice-note.webm', {
+          type: input.voiceNote.blob.type || 'audio/webm',
+        })
+        mediaId = (await uploadMedia(voiceFile, 'MESSAGE')).id
       }
-      setOffers((prev) => [offer, ...prev])
-      pushMessage(product.sellerId, product.id, {
-        from: 'buyer',
-        offerId: offer.id,
-        text: input.message,
-        voiceNote: input.voiceNote,
+      const created = await createBuyerOffer({
+        productId: apiProduct.id,
+        quantity: input.quantity,
+        offerPrice: input.offerPrice,
+        message: input.message,
+        mediaId,
       })
+      const offer = mapApiOffer(created, user!.id)
+      if (input.voiceNote && !offer.voiceNote) offer.voiceNote = input.voiceNote
+      setOffers((prev) => [offer, ...prev.filter((item) => item.id !== offer.id)])
+      const conversation = await createConversation({ productId: apiProduct.id })
+      upsertConversation(mapApiConversation(conversation, isSeller))
       toast.success('Offer sent to seller', { description: 'You will be notified when they respond.' })
       return offer
     },
-    [pushMessage],
+    [isSeller, requireSignIn, resolveApiProduct, upsertConversation, user],
   )
 
   const respondToOffer = useCallback(
-    (offerId: string, status: Exclude<OfferStatus, 'pending'>) => {
+    async (offerId: string, action: 'accept' | 'decline' | 'counter', counterPrice?: number) => {
       const offer = offersRef.current.find((o) => o.id === offerId)
       if (!offer) return
-      setOffers((prev) => prev.map((o) => (o.id === offerId ? { ...o, status } : o)))
-      const product = getProduct(products.find((p) => p.id === offer.productId)?.slug ?? '')
-      const seller = getSeller(offer.sellerId)
-      pushMessage(offer.sellerId, offer.productId, {
-        from: 'seller',
-        offerId,
-        text:
-          status === 'accepted'
-            ? 'Deal! I have accepted your offer. The new price is now applied for you.'
-            : 'Sorry, I cannot go that low on this one. Feel free to send another offer.',
-      })
-      if (status === 'accepted') {
-        toast.success(`${seller?.name ?? 'Seller'} accepted your offer`, {
-          description: `${product?.name ?? 'Item'} is now yours for your offered price.`,
-        })
-      } else {
-        toast(`${seller?.name ?? 'Seller'} declined your offer`, { description: product?.name })
+      try {
+        const response = await respondToOfferApi(offerId, { action, counterPrice })
+        const mapped = mapApiOffer(response, user?.id ?? '')
+        setOffers((prev) => prev.map((item) => (item.id === offerId ? mapped : item)))
+        const conversations = await listConversations()
+        if (user) {
+          for (const conversation of conversations) upsertConversation(mapApiConversation(conversation, isSeller))
+        }
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'The offer could not be updated.')
+        throw error
       }
-      notify({
-        type: 'offer',
-        title: status === 'accepted' ? `Offer accepted by ${seller?.name ?? 'seller'}` : `Offer declined by ${seller?.name ?? 'seller'}`,
-        body:
-          status === 'accepted'
-            ? `${product?.name ?? 'Your item'} is now ${formatPrice(offer.offerPrice)} for you. Add it to your cart to lock it in.`
-            : `${product?.name ?? 'Your item'} — you can send a new offer anytime.`,
-        href: '/offers',
-      })
+      const product = products.find((p) => p.id === offer.productId || p.slug === offer.productSlug)
+      const seller = getSeller(offer.sellerId)
+      if (action === 'accept') {
+        toast.success(`${seller?.name ?? 'Seller'} accepted your offer`, {
+          description: `${product?.name ?? offer.productName ?? 'Item'} offer was accepted.`,
+        })
+      } else if (action === 'decline') {
+        toast(`${seller?.name ?? 'Seller'} declined your offer`, { description: product?.name ?? offer.productName })
+      }
+      if (action !== 'counter') {
+        notify({
+          type: 'offer',
+          title: action === 'accept' ? `Offer accepted by ${seller?.name ?? 'seller'}` : `Offer declined by ${seller?.name ?? 'seller'}`,
+          body: action === 'accept'
+            ? `${product?.name ?? offer.productName ?? 'Your item'} offer was accepted at ${formatPrice(offer.offerPrice)}.`
+            : `${product?.name ?? offer.productName ?? 'Your item'} — you can send a new offer anytime.`,
+          href: '/offers',
+        })
+      }
     },
-    [pushMessage, notify],
+    [isSeller, notify, products, upsertConversation, user],
   )
 
   const saveAddress: ShopContextValue['saveAddress'] = useCallback((input) => {
@@ -470,7 +640,7 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
       })
       return order
     },
-    [addresses, selectedAddressId, cart, delivery, priceFor, notify],
+    [addresses, selectedAddressId, cart, delivery, priceFor, notify, products],
   )
 
   const cartCount = cart.reduce((sum, i) => sum + i.quantity, 0)
@@ -502,6 +672,7 @@ export function useShop() {
 
 export function useCartTotals() {
   const { cart, priceFor, delivery } = useShop()
+  const { products } = useCatalogProducts()
   const lines = cart.flatMap((item) => {
     const product = products.find((p) => p.id === item.productId)
     return product ? [{ item, product, unitPrice: priceFor(product) }] : []

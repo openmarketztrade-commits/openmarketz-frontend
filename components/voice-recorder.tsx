@@ -5,7 +5,7 @@ import { Mic, Square, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
-export type VoiceNote = { url: string; duration: number }
+export type VoiceNote = { url: string; duration: number; blob?: Blob }
 
 export const formatDuration = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
 
@@ -38,7 +38,8 @@ export function VoiceRecorder({
       recorder.onstop = () => {
         stream.getTracks().forEach((t) => t.stop())
         const duration = (Date.now() - startRef.current) / 1000
-        onChange({ url: URL.createObjectURL(new Blob(chunks, { type: recorder.mimeType })), duration })
+        const blob = new Blob(chunks, { type: recorder.mimeType })
+        onChange({ url: URL.createObjectURL(blob), duration, blob })
       }
       recorderRef.current = recorder
       startRef.current = Date.now()

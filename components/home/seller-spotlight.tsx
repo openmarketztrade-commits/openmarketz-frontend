@@ -1,17 +1,21 @@
+'use client'
+
 import Image from 'next/image'
 import Link from 'next/link'
 import { BadgeCheck, MapPin, Star } from 'lucide-react'
-import { formatCompact, getProductsBySeller, sellers } from '@/lib/data'
+import { formatCompact, sellers } from '@/lib/data'
 import { Reveal } from '@/components/reveal'
 import { SectionHeading } from '@/components/section-heading'
+import { useCatalogProducts } from '@/components/catalog-provider'
 
 export function SellerSpotlight() {
+  const { products } = useCatalogProducts()
   return (
     <section className="mx-auto max-w-7xl px-4 pt-20 md:px-6">
       <SectionHeading eyebrow="Top rated" title="Stores worth following" />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {sellers.slice(0, 4).map((s, i) => {
-          const items = getProductsBySeller(s.id).slice(0, 3)
+          const items = products.filter((product) => product.sellerId === s.id).slice(0, 3)
           return (
             <Reveal key={s.id} delay={i * 0.06}>
               <Link

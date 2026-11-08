@@ -207,7 +207,7 @@ export function FileDrop({
           <p className="truncate text-sm font-medium">{file.name}</p>
           <p className="flex items-center gap-1 text-xs text-primary">
             <Check className="size-3" aria-hidden="true" />
-            Uploaded
+            Selected
           </p>
         </div>
         <button type="button" onClick={onClear} aria-label={`Remove ${label}`} className="flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-background hover:text-foreground">

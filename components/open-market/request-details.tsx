@@ -5,12 +5,13 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useState } from 'react'
 import { BadgeCheck, CalendarDays, Check, Clock, Eye, MapPin, MessageCircle, Package, Star, Truck } from 'lucide-react'
-import { formatPrice, getCategory, getSeller, products, sellers } from '@/lib/data'
+import { formatPrice, getCategory, getSeller, sellers } from '@/lib/data'
 import { ME, conditionLabels, timeAgo, type SellerResponse } from '@/lib/open-market'
 import { useOpenMarket } from '@/components/open-market/open-market-provider'
 import { RequestStatusBadge } from '@/components/open-market/request-card'
 import { Field, FormAlert, Select, SubmitButton, inputClass } from '@/components/forms'
 import { cn } from '@/lib/utils'
+import { useCatalogProducts } from '@/components/catalog-provider'
 
 export function RequestDetails({ id }: { id: string }) {
   const { requests, responsesFor } = useOpenMarket()
@@ -97,6 +98,7 @@ export function RequestDetails({ id }: { id: string }) {
 function OfferCard({ response, isMine, budgetMax }: { response: SellerResponse; isMine: boolean; budgetMax: number }) {
   const router = useRouter()
   const { acceptResponse, declineResponse } = useOpenMarket()
+  const { products } = useCatalogProducts()
   const seller = getSeller(response.sellerId)
   const product = response.productId ? products.find((p) => p.id === response.productId) : undefined
   if (!seller) return null
@@ -190,6 +192,7 @@ function BuyerPanel({ requestStatus, count }: { requestStatus: string; count: nu
 
 function RespondForm({ requestId, budgetMax, category }: { requestId: string; budgetMax: number; category: string }) {
   const { submitResponse } = useOpenMarket()
+  const { products } = useCatalogProducts()
   const [sellerId, setSellerId] = useState(sellers[0].id)
   const [price, setPrice] = useState('')
   const [days, setDays] = useState('2')

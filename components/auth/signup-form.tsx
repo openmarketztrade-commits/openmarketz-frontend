@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { ArrowLeft, MailCheck } from 'lucide-react'
-import { DEMO_CODE, useAuth, type Gender } from '@/components/auth-provider'
+import { useAuth, type Gender } from '@/components/auth-provider'
 import {
   Field, FormAlert, OtpInput, PasswordInput, PasswordStrength, Select, SubmitButton, inputClass, isEmail, isStrongPassword,
 } from '@/components/forms'
@@ -32,9 +32,10 @@ type Errors = Partial<Record<keyof Form, string>>
 const MIN_AGE = 16
 
 export function SignupForm() {
-  const { signUp, verifyEmail, isEmailTaken } = useAuth()
+  const { signUp, verifyEmail, resendVerification } = useAuth()
   const router = useRouter()
   const next = useSearchParams().get('next') || '/account'
+  const sellerSignup = next === '/sell' || next.startsWith('/sell?')
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [loading, setLoading] = useState(false)
   const [formError, setFormError] = useState('')
@@ -55,7 +56,6 @@ export function SignupForm() {
     if (form.firstName.trim().length < 2) e.firstName = 'Enter your first name'
     if (form.lastName.trim().length < 2) e.lastName = 'Enter your last name'
     if (!isEmail(form.email)) e.email = 'Enter a valid email address'
-    else if (isEmailTaken(form.email)) e.email = 'This email already has an account. Try signing in.'
     if (!isStrongPassword(form.password)) e.password = 'Use 8+ characters with an uppercase letter and a number'
     if (form.confirm !== form.password) e.confirm = 'Passwords do not match'
     setErrors(e)
@@ -89,16 +89,24 @@ export function SignupForm() {
       setLoading(false)
       if (!res.ok) return setFormError(res.error)
       setStep(3)
-      toast(`Verification code sent to ${form.email}`, { description: `Demo code: ${DEMO_CODE}` })
+      toast(`Verification code sent to ${form.email}`)
       return
     }
     if (code.length !== 6) return setFormError('Enter the 6-digit code we sent you')
     setLoading(true)
-    const res = await verifyEmail(code)
+    const res = await verifyEmail(form.email, code)
     setLoading(false)
     if (!res.ok) return setFormError(res.error)
     toast.success(`Welcome to OpenMarketz, ${form.firstName}!`)
-    router.push(next.startsWith('/') ? next : '/account')
+    router.push(next.startsWith('/') && !next.startsWith('//') ? next : '/account')
+  }
+
+  async function onResendCode() {
+    setLoading(true)
+    const res = await resendVerification(form.email)
+    setLoading(false)
+    if (!res.ok) return setFormError(res.error)
+    toast('A new verification code is on its way')
   }
 
   if (step === 3) {
@@ -121,16 +129,10 @@ export function SignupForm() {
         <OtpInput value={code} onChange={setCode} invalid={Boolean(formError)} />
         <SubmitButton loading={loading}>Verify and continue</SubmitButton>
         <div className="flex items-center justify-between text-sm">
-          <button
-            type="button"
-            className="font-medium text-primary hover:underline underline-offset-2"
-            onClick={() => toast('A new code is on its way', { description: `Demo code: ${DEMO_CODE}` })}
-          >
+          <button type="button" disabled={loading} className="font-medium text-primary hover:underline underline-offset-2 disabled:opacity-60" onClick={onResendCode}>
             Resend code
           </button>
-          <Link href={next} className="text-muted-foreground hover:text-foreground">
-            Skip for now
-          </Link>
+          <span className="text-muted-foreground">You must verify your email before signing in.</span>
         </div>
       </form>
     )
@@ -148,6 +150,12 @@ export function SignupForm() {
       </ol>
 
       {formError && <FormAlert>{formError}</FormAlert>}
+
+      {sellerSignup && (
+        <FormAlert tone="info">
+          Create and verify your personal account first. You’ll continue to seller onboarding after verification.
+        </FormAlert>
+      )}
 
       {step === 1 ? (
         <>

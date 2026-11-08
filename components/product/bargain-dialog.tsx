@@ -21,7 +21,11 @@ export function BargainDialog({ product, quantity }: { product: Product; quantit
   const [voiceNote, setVoiceNote] = useState<VoiceNote>()
   const [error, setError] = useState('')
 
-  const pending = offers.find((o) => o.productId === product.id && o.status === 'pending')
+  const pending = offers.find((o) =>
+    o.role !== 'seller' &&
+    (o.productId === product.id || o.productSlug === product.slug) &&
+    ['pending', 'countered'].includes(o.status),
+  )
   const offerValue = Number(amount.replace(/[^\d]/g, ''))
   const minOffer = Math.round(product.price * 0.5)
   const percentOff = offerValue ? Math.round(((product.price - offerValue) / product.price) * 100) : 0
@@ -34,14 +38,18 @@ export function BargainDialog({ product, quantity }: { product: Product; quantit
     setMode('text')
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!offerValue) return setError('Enter the price you want to pay.')
     if (offerValue >= product.price) return setError('Your offer should be lower than the current price.')
     if (offerValue < minOffer) return setError(`Offers below ${formatPrice(minOffer)} are unlikely to be accepted.`)
-    submitOffer({ product, productId: product.id, offerPrice: offerValue, quantity, message: message.trim() || undefined, voiceNote })
-    setOpen(false)
-    reset()
+    try {
+      await submitOffer({ product, productId: product.id, offerPrice: offerValue, quantity, message: message.trim() || undefined, voiceNote })
+      setOpen(false)
+      reset()
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Your offer could not be sent.')
+    }
   }
 
   return (
@@ -74,7 +82,7 @@ export function BargainDialog({ product, quantity }: { product: Product; quantit
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        <form onSubmit={(e) => { void handleSubmit(e) }} className="flex flex-col gap-5">
           <div>
             <label htmlFor="offer-amount" className="text-sm font-medium">
               Your offer price

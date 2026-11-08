@@ -5,14 +5,15 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { CalendarDays, Gift, Heart, Pencil, Plus, Share2, Trash2, Users } from 'lucide-react'
-import { formatPrice, products } from '@/lib/data'
+import { formatPrice } from '@/lib/data'
 import { useShop } from '@/components/shop-provider'
-import { decodeList, demoFriendList, encodeList, occasions, useWishlists, type GiftList } from '@/components/wishlist-provider'
+import { decodeList, encodeList, occasions, useWishlists, type GiftList } from '@/components/wishlist-provider'
 import { ProductCard } from '@/components/product-card'
 import { GiftListDialog } from '@/components/wishlist/gift-list-dialog'
 import { ShareDialog } from '@/components/wishlist/share-dialog'
 import { fieldClass } from '@/components/checkout/checkout-ui'
 import { cn } from '@/lib/utils'
+import { useCatalogProducts } from '@/components/catalog-provider'
 
 export function WishlistView() {
   const [tab, setTab] = useState<'saved' | 'lists'>('lists')
@@ -71,6 +72,7 @@ export function WishlistView() {
 
 function SavedItems() {
   const { wishlist } = useShop()
+  const { products } = useCatalogProducts()
   const saved = products.filter((p) => wishlist.has(p.id))
   if (saved.length === 0) {
     return (
@@ -120,6 +122,7 @@ function GiftLists({ onCreate }: { onCreate: () => void }) {
 
 function GiftListCard({ list }: { list: GiftList }) {
   const { giftsFor, deleteList } = useWishlists()
+  const { products } = useCatalogProducts()
   const [sharing, setSharing] = useState(false)
   const [editing, setEditing] = useState(false)
   const items = list.productIds.flatMap((id) => products.find((p) => p.id === id) ?? [])
@@ -219,8 +222,6 @@ function PayForOthers() {
   const router = useRouter()
   const [link, setLink] = useState('')
   const [error, setError] = useState('')
-  const friendToken = encodeList({ ...demoFriendList, createdAt: 0 })
-  const friendItems = demoFriendList.productIds.flatMap((id) => products.find((p) => p.id === id) ?? [])
 
   function open(e: React.FormEvent) {
     e.preventDefault()
@@ -249,22 +250,6 @@ function PayForOthers() {
             Open wishlist
           </button>
         </form>
-      </div>
-
-      <div className="rounded-3xl border bg-card p-5">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Shared with you</p>
-        <h3 className="mt-2 font-semibold">{demoFriendList.name}</h3>
-        <p className="text-sm text-muted-foreground">{`From ${demoFriendList.ownerName} · ${demoFriendList.ownerRegion}`}</p>
-        <div className="mt-3 flex -space-x-2">
-          {friendItems.map((p) => (
-            <span key={p.id} className="relative size-10 overflow-hidden rounded-full border-2 border-card bg-muted">
-              <Image src={p.image || '/placeholder.svg'} alt="" fill sizes="40px" className="object-cover" />
-            </span>
-          ))}
-        </div>
-        <Link href={`/w/${friendToken}`} className="mt-4 flex h-10 items-center justify-center rounded-xl border text-sm font-medium hover:bg-muted">
-          View and gift
-        </Link>
       </div>
     </>
   )

@@ -7,8 +7,11 @@ import { BadgeCheck, Calendar, Check, MapPin, MessageCircle, Plus, Star } from '
 import { toast } from 'sonner'
 import { formatCompact, type Seller } from '@/lib/data'
 import { cn } from '@/lib/utils'
+import { useCatalogProducts } from '@/components/catalog-provider'
 
-export function StoreHeader({ seller, productCount }: { seller: Seller; productCount: number }) {
+export function StoreHeader({ seller }: { seller: Seller }) {
+  const { products } = useCatalogProducts()
+  const productCount = products.filter((product) => product.sellerSlug === seller.slug).length
   const [following, setFollowing] = useState(false)
   const followers = seller.followers + (following ? 1 : 0)
 

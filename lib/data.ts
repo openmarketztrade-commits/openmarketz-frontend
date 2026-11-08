@@ -31,6 +31,8 @@ export type Product = {
   brand: string
   category: string
   sellerId: string
+  sellerSlug?: string
+  sellerName?: string
   price: number
   compareAt?: number
   rating: number

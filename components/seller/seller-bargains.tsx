@@ -63,10 +63,10 @@ function BargainCard({ bargain: b }: { bargain: BargainRequest }) {
   return (
     <li className="rounded-2xl border bg-card p-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-        {p && <Image src={p.image} alt="" width={72} height={72} className="size-18 shrink-0 rounded-xl object-cover" />}
+        {(b.productImage || p?.image) && <Image src={b.productImage ?? p!.image} alt="" width={72} height={72} className="size-18 shrink-0 rounded-xl object-cover" />}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="font-medium">{p?.name}</p>
+            <p className="font-medium">{b.productName ?? p?.name ?? 'Product'}</p>
             <StatusPill status={b.status} label={statusLabel[b.status]} />
           </div>
           <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
@@ -90,15 +90,20 @@ function BargainCard({ bargain: b }: { bargain: BargainRequest }) {
           {countering ? (
             <form
               className="flex flex-wrap items-center gap-2"
-              onSubmit={(e) => {
+              onSubmit={async (e) => {
                 e.preventDefault()
                 const n = Number(counter)
                 if (!(n > b.offerPrice && n < b.listPrice)) {
                   toast.error(`Counter must be between ${formatPrice(b.offerPrice)} and ${formatPrice(b.listPrice)}`)
                   return
                 }
-                respondToBargain(b.id, { counter: n })
-                toast.success(`Counter offer of ${formatPrice(n)} sent`)
+                try {
+                  await respondToBargain(b.id, { counter: n })
+                  toast.success(`Counter offer of ${formatPrice(n)} sent`)
+                  setCountering(false)
+                } catch {
+                  // The provider surfaces the API error.
+                }
               }}
             >
               <label htmlFor={`counter-${b.id}`} className="text-sm font-medium">Your price (₦)</label>
@@ -111,8 +116,9 @@ function BargainCard({ bargain: b }: { bargain: BargainRequest }) {
               <button
                 type="button"
                 onClick={() => {
-                  respondToBargain(b.id, 'accept')
-                  toast.success(`Accepted ${formatPrice(b.offerPrice)}. The buyer can now check out at this price.`)
+                  void respondToBargain(b.id, 'accept').then(() => {
+                    toast.success(`Accepted ${formatPrice(b.offerPrice)}. The buyer can now check out at this price.`)
+                  }).catch(() => {})
                 }}
                 className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground"
               >
@@ -126,8 +132,9 @@ function BargainCard({ bargain: b }: { bargain: BargainRequest }) {
               <button
                 type="button"
                 onClick={() => {
-                  respondToBargain(b.id, 'decline')
-                  toast('Offer declined')
+                  void respondToBargain(b.id, 'decline').then(() => {
+                    toast('Offer declined')
+                  }).catch(() => {})
                 }}
                 className="flex h-10 items-center gap-1.5 rounded-xl px-4 text-sm font-semibold text-deal hover:bg-deal/10"
               >

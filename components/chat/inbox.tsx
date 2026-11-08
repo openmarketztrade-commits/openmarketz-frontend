@@ -5,12 +5,14 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { ArrowLeft, MessageCircle } from 'lucide-react'
 import { useShop } from '@/components/shop-provider'
-import { getSeller, products } from '@/lib/data'
+import { getSeller } from '@/lib/data'
+import { useCatalogProducts } from '@/components/catalog-provider'
 import { ChatThread } from '@/components/chat/chat-thread'
 import { cn } from '@/lib/utils'
 
 export function Inbox() {
   const { conversations } = useShop()
+  const { products } = useCatalogProducts()
   const [activeId, setActiveId] = useState<string | null>(null)
   const active = conversations.find((c) => c.id === activeId)
 
@@ -41,16 +43,16 @@ export function Inbox() {
                 className={cn('flex w-full items-center gap-3 border-b p-4 text-left transition-colors', c.id === activeId ? 'bg-muted' : 'hover:bg-muted/50')}
               >
                 <div className="relative size-12 shrink-0 overflow-hidden rounded-xl bg-muted">
-                  <Image src={product?.image || '/placeholder.svg'} alt="" fill sizes="48px" className="object-cover" />
+                  {(product?.image || c.productImage) && <Image src={product?.image || c.productImage || '/placeholder.svg'} alt="" fill sizes="48px" className="object-cover" />}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-sm font-medium">{seller?.name}</p>
+                    <p className="truncate text-sm font-medium">{seller?.name ?? c.sellerName ?? 'Seller'}</p>
                     {c.unread > 0 && (
                       <span className="flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">{c.unread}</span>
                     )}
                   </div>
-                  <p className="truncate text-xs text-muted-foreground">{product?.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">{product?.name ?? c.productName}</p>
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">
                     {last ? (last.voiceNote ? 'Voice note' : last.offerId && !last.text ? 'Price offer' : last.text) : 'Say hello'}
                   </p>

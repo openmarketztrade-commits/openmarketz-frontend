@@ -9,6 +9,7 @@ import { useNotifications } from '@/components/notifications-provider'
 import { AccountMenu } from '@/components/account/account-menu'
 import { categories } from '@/lib/data'
 import { useShop } from '@/components/shop-provider'
+import { useAuth } from '@/components/auth-provider'
 import { SearchBar } from '@/components/search-bar'
 import { Logo } from '@/components/logo'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
@@ -17,8 +18,25 @@ import { cn } from '@/lib/utils'
 export function SiteHeader() {
   const pathname = usePathname()
   const { cartCount, wishlist, offers, conversations } = useShop()
+  const { user, authReady } = useAuth()
   const unread = conversations.reduce((sum, c) => sum + c.unread, 0)
   const { unreadCount: unreadNotifications } = useNotifications()
+  const sellerHref = !authReady
+    ? '/sell'
+    : !user
+      ? '/signup?next=/sell'
+      : user.seller?.status === 'approved'
+        ? '/seller'
+        : user.seller?.status === 'rejected'
+          ? '/support'
+          : '/sell'
+  const sellerLabel = user?.seller?.status === 'approved'
+    ? 'Seller dashboard'
+    : user?.seller?.status === 'under_review'
+      ? 'Application under review'
+      : user?.seller?.status === 'rejected'
+        ? 'Seller support'
+        : 'Start selling'
 
   return (
     <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur-xl">
@@ -34,9 +52,9 @@ export function SiteHeader() {
             <Link href="/open-market" className="transition-colors hover:text-background">
               Open Market
             </Link>
-            <Link href="/seller" className="flex items-center gap-1.5 transition-colors hover:text-background">
+            <Link href={sellerHref} className="flex items-center gap-1.5 transition-colors hover:text-background">
               <Store className="size-3.5" />
-              Seller hub
+              {sellerLabel}
             </Link>
           </div>
         </div>

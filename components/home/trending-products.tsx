@@ -2,16 +2,18 @@
 
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { categories, products } from '@/lib/data'
+import { categories } from '@/lib/data'
 import { ProductCard } from '@/components/product-card'
 import { SectionHeading } from '@/components/section-heading'
 import { cn } from '@/lib/utils'
+import { useCatalogProducts } from '@/components/catalog-provider'
 
 const tabs = [{ slug: 'all', name: 'All' }, ...categories.slice(0, 5)]
 
 export function TrendingProducts() {
   const [active, setActive] = useState('all')
-  const list = (active === 'all' ? [...products].sort((a, b) => b.sold - a.sold) : products.filter((p) => p.category === active)).slice(0, 10)
+  const { products: catalogProducts } = useCatalogProducts()
+  const list = (active === 'all' ? [...catalogProducts].sort((a, b) => b.sold - a.sold) : catalogProducts.filter((p) => p.category === active)).slice(0, 10)
 
   return (
     <section className="mx-auto max-w-7xl px-4 pt-20 md:px-6">
