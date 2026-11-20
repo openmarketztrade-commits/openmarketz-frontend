@@ -17,7 +17,7 @@ export function OrdersList() {
   const { products } = useCatalogProducts()
   const [filter, setFilter] = useState<(typeof filters)[number]>('All')
   const visible = orders.filter((o) =>
-    filter === 'All' ? true : filter === 'Delivered' ? o.status === 'delivered' : o.status !== 'delivered',
+    filter === 'All' ? true : filter === 'Delivered' ? o.status === 'delivered' : !['delivered', 'cancelled', 'refunded'].includes(o.status),
   )
 
   return (
@@ -68,7 +68,7 @@ export function OrdersList() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-medium">{order.id}</p>
+                      <p className="font-medium">{order.displayId ?? order.id}</p>
                       <StatusBadge status={order.status} />
                     </div>
                     <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">

@@ -38,7 +38,7 @@ export function VoiceRecorder({
       recorder.onstop = () => {
         stream.getTracks().forEach((t) => t.stop())
         const duration = (Date.now() - startRef.current) / 1000
-        const blob = new Blob(chunks, { type: recorder.mimeType })
+        const blob = new Blob(chunks, { type: recorder.mimeType || chunks[0]?.type || 'audio/webm' })
         onChange({ url: URL.createObjectURL(blob), duration, blob })
       }
       recorderRef.current = recorder

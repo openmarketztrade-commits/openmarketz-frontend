@@ -48,8 +48,8 @@ export default function RootLayout({
   return (
     <html lang="en" data-scroll-behavior="smooth" className={`${inter.variable} ${display.variable}`}>
       <body className="flex min-h-dvh flex-col antialiased">
-        <NotificationsProvider>
-          <AuthProvider>
+        <AuthProvider>
+          <NotificationsProvider>
             <CatalogProvider>
               <ShopProvider>
               <WishlistProvider>
@@ -65,8 +65,8 @@ export default function RootLayout({
               </WishlistProvider>
               </ShopProvider>
             </CatalogProvider>
-          </AuthProvider>
-        </NotificationsProvider>
+          </NotificationsProvider>
+        </AuthProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

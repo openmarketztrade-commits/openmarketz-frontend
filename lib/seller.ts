@@ -40,14 +40,14 @@ export type DispatchMethod = 'dropoff' | 'pickup'
 export type SalesOrder = {
   id: string
   buyer: { name: string; city: string; phone: string }
-  items: { productId: string; quantity: number; unitPrice: number; options: Record<string, string> }[]
+  items: { productId: string; productName?: string; quantity: number; unitPrice: number; options: Record<string, string> }[]
   total: number
   placedAt: number
   dispatchBy: number
   status: FulfilmentStatus
   dispatch?: { method: DispatchMethod; hub: string; waybill: string; at: number }
   payout: 'escrow' | 'released'
-  source: 'shop'
+  source: 'shop' | 'api'
 }
 
 export type SellerAlertType = 'order' | 'dispatch' | 'offer' | 'request' | 'payout' | 'system'

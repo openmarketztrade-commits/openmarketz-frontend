@@ -5,6 +5,7 @@ import { CheckCircle2, Mail } from 'lucide-react'
 import { useAuth } from '@/components/auth-provider'
 import { Field, FormAlert, Select, SubmitButton, inputClass, isEmail } from '@/components/forms'
 import { cn } from '@/lib/utils'
+import { createSupportTicket } from '@/lib/api'
 
 export const SUPPORT_EMAIL = 'support@openmarketz.ng'
 
@@ -16,13 +17,12 @@ export function ComplaintForm({ compact = false }: { compact?: boolean }) {
   const [name, setName] = useState(user ? `${user.firstName} ${user.lastName}` : '')
   const [email, setEmail] = useState(user?.email ?? '')
   const [topic, setTopic] = useState(topics[0])
-  const [orderId, setOrderId] = useState('')
   const [message, setMessage] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [sending, setSending] = useState(false)
   const [ticket, setTicket] = useState<string | null>(null)
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault()
     const err: Record<string, string> = {}
     if (name.trim().length < 2) err.name = 'Enter your name.'
@@ -31,10 +31,22 @@ export function ComplaintForm({ compact = false }: { compact?: boolean }) {
     setErrors(err)
     if (Object.keys(err).length) return
     setSending(true)
-    setTimeout(() => {
+    try {
+      const created = await createSupportTicket({
+        name: name.trim(),
+        email: email.trim(),
+        topic,
+        message: message.trim(),
+      })
+      setTicket(created.ticketNumber)
+    } catch (error) {
+      setErrors((previous) => ({
+        ...previous,
+        submit: error instanceof Error ? error.message : 'Your ticket could not be created.',
+      }))
+    } finally {
       setSending(false)
-      setTicket(`TCK-${Math.floor(100000 + Math.random() * 899999)}`)
-    }, 900)
+    }
   }
 
   if (ticket) {
@@ -44,7 +56,7 @@ export function ComplaintForm({ compact = false }: { compact?: boolean }) {
         <CheckCircle2 className="size-10 text-primary" aria-hidden="true" />
         <h3 className="font-display text-xl font-semibold">Complaint received</h3>
         <p className="max-w-sm text-sm text-muted-foreground">
-          {`Your ticket number is ${ticket}. We sent a copy to ${email} and will reply within 24 hours.`}
+          {`Your support ticket number is ${ticket}. Keep it for reference. Our team will reply to ${email}.`}
         </p>
         <div className="flex flex-wrap justify-center gap-2">
           <a href={mailto} className="flex h-10 items-center gap-2 rounded-xl border px-4 text-sm font-medium hover:bg-muted">
@@ -56,7 +68,6 @@ export function ComplaintForm({ compact = false }: { compact?: boolean }) {
             onClick={() => {
               setTicket(null)
               setMessage('')
-              setOrderId('')
             }}
             className="h-10 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground"
           >
@@ -83,9 +94,6 @@ export function ComplaintForm({ compact = false }: { compact?: boolean }) {
             ))}
           </Select>
         </Field>
-        <Field label="Order or request ID" htmlFor={`${uid}-order`} optional>
-          <input id={`${uid}-order`} value={orderId} onChange={(e) => setOrderId(e.target.value)} placeholder="e.g. OMZ-48213" className={inputClass} />
-        </Field>
       </div>
       <Field label="What happened?" htmlFor={`${uid}-msg`} error={errors.message}>
         <textarea
@@ -99,6 +107,7 @@ export function ComplaintForm({ compact = false }: { compact?: boolean }) {
         />
       </Field>
       {!compact && <FormAlert tone="info">{`We reply by email within 24 hours. You can also write to us directly at ${SUPPORT_EMAIL}.`}</FormAlert>}
+      {errors.submit && <p role="alert" className="text-sm text-destructive">{errors.submit}</p>}
       <SubmitButton loading={sending}>Send complaint</SubmitButton>
     </form>
   )

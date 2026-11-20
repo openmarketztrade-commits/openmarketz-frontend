@@ -19,6 +19,7 @@ export type MarketRequest = {
   postedHoursAgo: number
   status: RequestStatus
   views: number
+  responseCount?: number
 }
 
 export type SellerResponse = {
@@ -31,6 +32,11 @@ export type SellerResponse = {
   productId?: string
   postedHoursAgo: number
   status: ResponseStatus
+  sellerName?: string
+  sellerSlug?: string
+  sellerVerified?: boolean
+  sellerRating?: number
+  isMine?: boolean
 }
 
 export const ME = 'me'

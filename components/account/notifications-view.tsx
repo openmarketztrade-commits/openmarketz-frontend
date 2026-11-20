@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 
 const icons: Record<NotificationType, typeof Bell> = {
-  order: Package, offer: HandCoins, message: MessageCircle, wishlist: Gift, account: ShieldCheck, promo: Tag,
+  order: Package, offer: HandCoins, message: MessageCircle, wishlist: Gift, account: ShieldCheck, promo: Tag, market: Tag, support: MessageCircle,
 }
 
 type Filter = 'all' | 'unread' | NotificationType

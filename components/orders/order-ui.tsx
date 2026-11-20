@@ -10,15 +10,17 @@ export const statusFlow: { status: OrderStatus; label: string; icon: typeof Pack
   { status: 'delivered', label: 'Delivered', icon: Home },
 ]
 
-export const statusLabel = (s: OrderStatus) => statusFlow.find((f) => f.status === s)?.label ?? s
+export const statusLabel = (s: OrderStatus) =>
+  s === 'cancelled' ? 'Cancelled' : s === 'refunded' ? 'Refunded' : statusFlow.find((f) => f.status === s)?.label ?? s
 
 export function StatusBadge({ status }: { status: OrderStatus }) {
   const delivered = status === 'delivered'
+  const stopped = status === 'cancelled' || status === 'refunded'
   return (
     <span
       className={cn(
         'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium',
-        delivered ? 'bg-primary/10 text-primary' : 'bg-accent text-accent-foreground',
+        delivered ? 'bg-primary/10 text-primary' : stopped ? 'bg-muted text-muted-foreground' : 'bg-accent text-accent-foreground',
       )}
     >
       <span className={cn('size-1.5 rounded-full', delivered ? 'bg-primary' : 'bg-current')} aria-hidden="true" />
@@ -28,6 +30,9 @@ export function StatusBadge({ status }: { status: OrderStatus }) {
 }
 
 export function OrderTimeline({ status, placedAt }: { status: OrderStatus; placedAt: number }) {
+  if (status === 'cancelled' || status === 'refunded') {
+    return <p className="rounded-xl bg-muted p-4 text-sm text-muted-foreground">{statusLabel(status)}. Contact support if you need help with this order.</p>
+  }
   const currentIndex = statusFlow.findIndex((s) => s.status === status)
   return (
     <ol className="flex flex-col">

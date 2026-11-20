@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { BadgeCheck, Building2, Check, IdCard, Landmark, Store } from 'lucide-react'
 import { categories } from '@/lib/data'
 import { countries, getCountry, maxBirthDate, type CountryCode } from '@/lib/geo'
@@ -30,7 +30,6 @@ export function SellerOnboarding() {
     user,
     authReady,
     submitSellerApplication,
-    refreshSellerApplication,
   } = useAuth()
   const [step, setStep] = useState(0)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -67,10 +66,6 @@ export function SellerOnboarding() {
   const [agree, setAgree] = useState(false)
 
   const id = c.idTypes.find((t) => t.value === idType) ?? c.idTypes[0]
-
-  useEffect(() => {
-    if (authReady && user) void refreshSellerApplication()
-  }, [authReady, user?.id, refreshSellerApplication])
 
   if (!authReady) {
     return (

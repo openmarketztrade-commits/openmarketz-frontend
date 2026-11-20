@@ -5,18 +5,16 @@ import { useState } from 'react'
 import { CalendarDays, MapPin, Send } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatPrice, getCategory } from '@/lib/data'
-import { STORE_ID } from '@/lib/seller'
 import type { MarketRequest } from '@/lib/open-market'
 import { useOpenMarket } from '@/components/open-market/open-market-provider'
-import { useSeller } from '@/components/seller/seller-provider'
 import { PageHeader, StatusPill } from '@/components/seller/seller-shell'
-import { Select, inputClass } from '@/components/forms'
+import { inputClass } from '@/components/forms'
 import { cn } from '@/lib/utils'
 
 export function SellerLeads() {
   const { requests, responses } = useOpenMarket()
   const open = requests.filter((r) => r.status === 'open')
-  const mine = responses.filter((r) => r.sellerId === STORE_ID)
+  const mine = responses.filter((r) => r.isMine)
 
   return (
     <div className="flex flex-col gap-8">
@@ -54,13 +52,12 @@ export function SellerLeads() {
 
 function LeadCard({ request: r, responded }: { request: MarketRequest; responded: boolean }) {
   const { submitResponse, responsesFor } = useOpenMarket()
-  const { listings } = useSeller()
   const [composing, setComposing] = useState(false)
   const [price, setPrice] = useState(String(r.budgetMax))
   const [days, setDays] = useState('2')
   const [note, setNote] = useState('')
-  const [productId, setProductId] = useState('')
-  const competing = responsesFor(r.id).length
+  const [submitting, setSubmitting] = useState(false)
+  const competing = Math.max(r.responseCount ?? 0, responsesFor(r.id).length)
 
   return (
     <li className="flex flex-col rounded-3xl border bg-card p-5">
@@ -72,7 +69,7 @@ function LeadCard({ request: r, responded }: { request: MarketRequest; responded
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span className="font-semibold text-foreground">{`${formatPrice(r.budgetMin)} – ${formatPrice(r.budgetMax)}`}</span>
         <span className="flex items-center gap-1"><MapPin className="size-3" aria-hidden="true" />{r.location}</span>
-        <span className="flex items-center gap-1"><CalendarDays className="size-3" aria-hidden="true" />{`By ${new Date(r.neededBy).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}`}</span>
+        <span className="flex items-center gap-1"><CalendarDays className="size-3" aria-hidden="true" />{r.neededBy ? `By ${new Date(r.neededBy).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}` : 'Flexible date'}</span>
         <span>{`${competing} offer${competing === 1 ? '' : 's'}`}</span>
       </div>
 
@@ -82,15 +79,23 @@ function LeadCard({ request: r, responded }: { request: MarketRequest; responded
         ) : composing ? (
           <form
             className="flex flex-col gap-3 border-t pt-4"
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault()
+              if (submitting) return
               const p = Number(price)
               const d = Number(days)
               if (!(p > 0) || !(d >= 1)) return toast.error('Enter a valid price and delivery time.')
               if (note.trim().length < 10) return toast.error('Add a short note for the buyer.')
-              submitResponse({ requestId: r.id, sellerId: STORE_ID, price: p, deliveryDays: d, note: note.trim(), productId: productId || undefined })
-              toast.success('Offer sent to buyer')
-              setComposing(false)
+              setSubmitting(true)
+              try {
+                await submitResponse({ requestId: r.id, price: p, deliveryDays: d, note: note.trim() })
+                toast.success('Offer sent to buyer')
+                setComposing(false)
+              } catch (error) {
+                toast.error(error instanceof Error ? error.message : 'Offer could not be sent.')
+              } finally {
+                setSubmitting(false)
+              }
             }}
           >
             <div className="grid grid-cols-2 gap-3">
@@ -104,18 +109,11 @@ function LeadCard({ request: r, responded }: { request: MarketRequest; responded
               </label>
             </div>
             <label className="flex flex-col gap-1 text-xs font-medium">
-              Attach one of your listings
-              <Select value={productId} onChange={(e) => setProductId(e.target.value)}>
-                <option value="">None</option>
-                {listings.filter((l) => l.status === 'active').map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </Select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium">
               Note to buyer
               <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Condition, warranty, what is included" className={cn(inputClass, 'h-auto resize-none py-2')} />
             </label>
             <div className="flex gap-2">
-              <button type="submit" className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground">
+              <button type="submit" disabled={submitting} className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">
                 <Send className="size-4" aria-hidden="true" />
                 Send offer
               </button>

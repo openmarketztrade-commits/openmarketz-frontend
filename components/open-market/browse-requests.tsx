@@ -4,16 +4,18 @@ import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { Plus, Search } from 'lucide-react'
 import { categories } from '@/lib/data'
-import { ME, type RequestCondition } from '@/lib/open-market'
+import { type RequestCondition } from '@/lib/open-market'
 import { useOpenMarket } from '@/components/open-market/open-market-provider'
 import { RequestCard } from '@/components/open-market/request-card'
 import { Select, inputClass } from '@/components/forms'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/components/auth-provider'
 
 type Sort = 'newest' | 'budget-high' | 'budget-low' | 'fewest-offers'
 
 export function BrowseRequests({ initialCategory }: { initialCategory?: string }) {
   const { requests, responsesFor } = useOpenMarket()
+  const { user } = useAuth()
   const [q, setQ] = useState('')
   const [category, setCategory] = useState(initialCategory ?? '')
   const [condition, setCondition] = useState<RequestCondition | ''>('')
@@ -27,7 +29,7 @@ export function BrowseRequests({ initialCategory }: { initialCategory?: string }
         (!term || `${r.title} ${r.description} ${r.location}`.toLowerCase().includes(term)) &&
         (!category || r.category === category) &&
         (!condition || r.condition === condition || r.condition === 'any') &&
-        (scope === 'all' || (scope === 'open' ? r.status === 'open' : r.buyerId === ME)),
+        (scope === 'all' || (scope === 'open' ? r.status === 'open' : r.buyerId === user?.id)),
     )
     return [...list].sort((a, b) => {
       if (sort === 'budget-high') return b.budgetMax - a.budgetMax
@@ -35,7 +37,7 @@ export function BrowseRequests({ initialCategory }: { initialCategory?: string }
       if (sort === 'fewest-offers') return responsesFor(a.id).length - responsesFor(b.id).length
       return a.postedHoursAgo - b.postedHoursAgo
     })
-  }, [requests, q, category, condition, scope, sort, responsesFor])
+  }, [requests, q, category, condition, scope, sort, responsesFor, user])
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 md:px-6">

@@ -7,13 +7,15 @@ import { useState } from 'react'
 import { CalendarDays, Gift, Heart, Pencil, Plus, Share2, Trash2, Users } from 'lucide-react'
 import { formatPrice } from '@/lib/data'
 import { useShop } from '@/components/shop-provider'
-import { decodeList, encodeList, occasions, useWishlists, type GiftList } from '@/components/wishlist-provider'
+import { occasions, useWishlists, type GiftList } from '@/components/wishlist-provider'
 import { ProductCard } from '@/components/product-card'
 import { GiftListDialog } from '@/components/wishlist/gift-list-dialog'
 import { ShareDialog } from '@/components/wishlist/share-dialog'
 import { fieldClass } from '@/components/checkout/checkout-ui'
 import { cn } from '@/lib/utils'
 import { useCatalogProducts } from '@/components/catalog-provider'
+import { createWishlistShare } from '@/lib/api'
+import { toast } from 'sonner'
 
 export function WishlistView() {
   const [tab, setTab] = useState<'saved' | 'lists'>('lists')
@@ -121,6 +123,7 @@ function GiftLists({ onCreate }: { onCreate: () => void }) {
 }
 
 function GiftListCard({ list }: { list: GiftList }) {
+  const router = useRouter()
   const { giftsFor, deleteList } = useWishlists()
   const { products } = useCatalogProducts()
   const [sharing, setSharing] = useState(false)
@@ -132,6 +135,20 @@ function GiftListCard({ list }: { list: GiftList }) {
   const funded = items.filter((p) => giftedIds.has(p.id)).reduce((s, p) => s + p.price, 0)
   const pct = total ? Math.round((funded / total) * 100) : 0
   const occasion = occasions.find((o) => o.value === list.occasion)?.label
+
+  async function previewAsGiver() {
+    try {
+      const { token } = await createWishlistShare(list.id)
+      router.push(`/w/${token}`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The wishlist link could not be created.')
+    }
+  }
+
+  function removeWishlist() {
+    void deleteList(list.id).catch((error) =>
+      toast.error(error instanceof Error ? error.message : 'The wishlist could not be deleted.'))
+  }
 
   return (
     <article className="rounded-3xl border bg-card p-5 md:p-6">
@@ -153,7 +170,7 @@ function GiftListCard({ list }: { list: GiftList }) {
           <button type="button" onClick={() => setEditing(true)} aria-label="Edit list" className="flex size-9 items-center justify-center rounded-full hover:bg-muted">
             <Pencil className="size-4" aria-hidden="true" />
           </button>
-          <button type="button" onClick={() => deleteList(list.id)} aria-label="Delete list" className="flex size-9 items-center justify-center rounded-full text-deal hover:bg-muted">
+          <button type="button" onClick={removeWishlist} aria-label="Delete list" className="flex size-9 items-center justify-center rounded-full text-deal hover:bg-muted">
             <Trash2 className="size-4" aria-hidden="true" />
           </button>
         </div>
@@ -207,9 +224,9 @@ function GiftListCard({ list }: { list: GiftList }) {
           <Share2 className="size-4" aria-hidden="true" />
           Ask someone to pay
         </button>
-        <Link href={`/w/${encodeList(list)}`} className="flex h-11 items-center justify-center rounded-xl border px-5 text-sm font-medium hover:bg-muted">
+        <button type="button" onClick={() => void previewAsGiver()} className="flex h-11 items-center justify-center rounded-xl border px-5 text-sm font-medium hover:bg-muted">
           Preview as giver
-        </Link>
+        </button>
       </div>
 
       {sharing && <ShareDialog list={list} open={sharing} onOpenChange={setSharing} />}
@@ -226,7 +243,7 @@ function PayForOthers() {
   function open(e: React.FormEvent) {
     e.preventDefault()
     const token = link.trim().split('/w/').pop()?.split(/[?#]/)[0] ?? ''
-    if (!token || !decodeList(token)) return setError('That link does not look like an OpenMarketz wishlist.')
+    if (!/^[A-Za-z0-9_-]{32,100}$/.test(token)) return setError('That link does not look like an OpenMarketz wishlist.')
     router.push(`/w/${token}`)
   }
 

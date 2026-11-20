@@ -54,7 +54,7 @@ export function SupportWidget() {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="font-semibold">OpenMarketz support</p>
-                <p className="text-xs text-background/70">We usually reply in ~2 minutes</p>
+                <p className="text-xs text-background/70">Messages are saved in your support ticket history</p>
               </div>
               <button type="button" onClick={() => setOpen(false)} aria-label="Close support" className="flex size-8 items-center justify-center rounded-full hover:bg-background/10">
                 <X className="size-4" />

@@ -10,7 +10,7 @@ import { RequestCard } from '@/components/open-market/request-card'
 const steps = [
   { icon: Megaphone, title: 'Post what you need', body: 'Describe the item, your budget and where you are. It takes under a minute.' },
   { icon: HandCoins, title: 'Sellers send offers', body: 'Verified sellers compete with their best price, delivery time and photos.' },
-  { icon: BadgeCheck, title: 'Accept and pay safely', body: 'Pick the best offer and check out. Your money is held in escrow until delivery.' },
+  { icon: BadgeCheck, title: 'Compare seller offers', body: 'Review prices and delivery times. Payment checkout for Open Market offers is not available yet.' },
 ]
 
 export function OpenMarketLanding() {

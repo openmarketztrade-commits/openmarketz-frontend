@@ -10,22 +10,42 @@ import { useCatalogProducts } from '@/components/catalog-provider'
 import {
   createBuyerOffer,
   createConversation,
+  createWishlist,
+  checkoutOrder,
+  confirmOrderDelivery,
   connectRealtime,
+  createVoiceNoteFile,
+  deleteAddress,
+  deleteCartItem,
   getAccessToken,
+  getCheckoutQuote,
+  getCart,
   getPublicProduct,
   listBuyerOffers,
   listConversations,
+  listAddresses,
+  listOrders,
+  listWishlists,
+  addWishlistItem,
+  removeWishlistItem,
   markConversationRead,
+  putCartItem,
   respondToOffer as respondToOfferApi,
+  saveAddress as saveAddressApi,
+  setDefaultAddress as setDefaultAddressApi,
   sendConversationMessage,
   uploadMedia,
+  type ApiAddress,
   type ApiConversation,
   type ApiMessage,
+  type ApiOrder,
   type ApiOffer,
+  type CheckoutResult,
 } from '@/lib/api'
 
 export type CartItem = {
   key: string
+  apiItemId?: string
   productId: string
   quantity: number
   options: Record<string, string>
@@ -91,19 +111,24 @@ export type Address = {
   state: string
   landmark?: string
   label: 'Home' | 'Work' | 'Other'
+  googlePlaceId?: string
 }
 
 export type DeliveryMethod = 'standard' | 'express' | 'pickup'
-export type PaymentMethod = 'card' | 'transfer' | 'ussd' | 'pod'
+export type PaymentMethod = 'paystack'
 
-export type OrderStatus = 'placed' | 'confirmed' | 'shipped' | 'out_for_delivery' | 'delivered'
+export type OrderStatus = 'placed' | 'confirmed' | 'shipped' | 'out_for_delivery' | 'delivered' | 'cancelled' | 'refunded'
 
 export type Order = {
   id: string
-  items: { productId: string; quantity: number; unitPrice: number; options: Record<string, string> }[]
+  displayId?: string
+  items: { id?: string; productId: string; quantity: number; unitPrice: number; options: Record<string, string> }[]
   address: Address
   delivery: DeliveryMethod
   payment: PaymentMethod
+  shipment?: { status: string; carrier?: string | null; waybill?: string | null; trackingUrl?: string | null } | null
+  buyerConfirmedDeliveredAt?: string | null
+  paidAt?: string | null
   subtotal: number
   deliveryFee: number
   serviceFee: number
@@ -131,14 +156,18 @@ type ShopContextValue = {
   retryMessage: (conversationId: string, messageId: string) => void
   markRead: (conversationId: string) => void
   addresses: Address[]
-  saveAddress: (address: Omit<Address, 'id'> & { id?: string }) => Address
-  removeAddress: (id: string) => void
+  saveAddress: (address: Omit<Address, 'id'> & { id?: string; isDefault?: boolean }) => Promise<Address>
+  removeAddress: (id: string) => Promise<void>
   selectedAddressId: string | null
   setSelectedAddressId: (id: string) => void
   delivery: DeliveryMethod
   setDelivery: (method: DeliveryMethod) => void
   orders: Order[]
-  placeOrder: (payment: PaymentMethod) => Order | null
+  checkoutQuote: Awaited<ReturnType<typeof getCheckoutQuote>> | null
+  checkoutQuoteReady: boolean
+  checkout: (options?: { saveCard?: boolean; savedPaymentMethodId?: string }) => Promise<CheckoutResult>
+  refreshOrders: () => Promise<void>
+  confirmDelivery: (orderId: string) => Promise<void>
 }
 
 const ShopContext = createContext<ShopContextValue | null>(null)
@@ -156,15 +185,75 @@ const uid = (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2,
 const cartKey = (productId: string, options: Record<string, string>) =>
   `${productId}::${Object.entries(options).sort().map(([k, v]) => `${k}=${v}`).join('|')}`
 
-const demoAddress: Address = {
-  id: 'addr_home',
-  fullName: 'Adaeze Okafor',
-  phone: '0803 123 4567',
-  line1: '14 Admiralty Way, Lekki Phase 1',
-  city: 'Lekki',
-  state: 'Lagos',
-  landmark: 'Opposite Mega Plaza',
-  label: 'Home',
+function mapAddress(address: ApiAddress): Address {
+  return {
+    id: address.id,
+    fullName: address.fullName,
+    phone: address.phone,
+    line1: address.line1,
+    city: address.city,
+    state: address.state,
+    landmark: address.landmark ?? undefined,
+    label: address.label,
+    googlePlaceId: address.googlePlaceId ?? undefined,
+  }
+}
+
+function mapOrder(order: ApiOrder): Order {
+  const statuses: Record<string, OrderStatus> = {
+    PENDING_PAYMENT: 'placed',
+    PAYMENT_FAILED: 'placed',
+    CONFIRMED: 'confirmed',
+    PROCESSING: 'confirmed',
+    SHIPPED: 'shipped',
+    OUT_FOR_DELIVERY: 'out_for_delivery',
+    DELIVERED: 'delivered',
+    CANCELLED: 'cancelled',
+    REFUNDED: 'refunded',
+  }
+  const address = order.address
+  return {
+    id: order.id,
+    displayId: order.orderNumber,
+    items: order.items.map((item) => ({
+      id: item.id,
+      productId: item.productId ?? item.productSlug,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      options: item.options,
+    })),
+    address: {
+      id: '',
+      fullName: address.fullName,
+      phone: address.phone,
+      line1: address.line1,
+      city: address.city,
+      state: address.state,
+      landmark: address.landmark ?? undefined,
+      label: 'Home',
+    },
+    delivery: order.deliveryMethod,
+    payment: 'paystack',
+    shipment: order.shipment,
+    buyerConfirmedDeliveredAt: order.buyerConfirmedDeliveredAt,
+    paidAt: order.paidAt,
+    subtotal: order.subtotal,
+    deliveryFee: order.deliveryFee,
+    serviceFee: order.serviceFee,
+    total: order.total,
+    status: statuses[order.status] ?? 'placed',
+    placedAt: new Date(order.createdAt).getTime(),
+  }
+}
+
+function mapCartItems(items: Awaited<ReturnType<typeof getCart>>['items']): CartItem[] {
+  return items.map((item) => ({
+    key: cartKey(item.productId, item.options),
+    apiItemId: item.id,
+    productId: item.productId,
+    quantity: item.quantity,
+    options: item.options,
+  }))
 }
 
 function mapApiOffer(offer: ApiOffer, userId: string): Offer {
@@ -225,19 +314,109 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
   const { products } = useCatalogProducts()
   const [cart, setCart] = useState<CartItem[]>([])
   const [wishlist, setWishlist] = useState<Set<string>>(new Set())
+  const [wishlistId, setWishlistId] = useState<string | null>(null)
   const [offers, setOffers] = useState<Offer[]>([])
   const { notify } = useNotifications()
   const [conversations, setConversations] = useState<Conversation[]>([])
-  const [addresses, setAddresses] = useState<Address[]>([demoAddress])
-  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(demoAddress.id)
+  const [addresses, setAddresses] = useState<Address[]>([])
+  const [selectedAddressId, setSelectedAddressIdState] = useState<string | null>(null)
   const [delivery, setDelivery] = useState<DeliveryMethod>('standard')
   const [orders, setOrders] = useState<Order[]>([])
+  const [checkoutQuote, setCheckoutQuote] = useState<Awaited<ReturnType<typeof getCheckoutQuote>> | null>(null)
+  const [checkoutQuoteReady, setCheckoutQuoteReady] = useState(false)
   const offersRef = useRef(offers)
   offersRef.current = offers
+  const cartRef = useRef(cart)
+  cartRef.current = cart
   const conversationsRef = useRef(conversations)
   conversationsRef.current = conversations
   const realtimeRef = useRef<Socket | null>(null)
   const isSeller = user?.seller?.status === 'approved'
+
+  const setSelectedAddressId = useCallback((id: string) => {
+    setSelectedAddressIdState(id)
+    if (user) {
+      void setDefaultAddressApi(id).catch((error) => {
+        toast.error(error instanceof Error ? error.message : 'The default address could not be updated.')
+      })
+    }
+  }, [user])
+
+  const refreshOrders = useCallback(async () => {
+    if (!user) return
+    const response = await listOrders()
+    setOrders(response.items.map(mapOrder))
+  }, [user])
+
+  useEffect(() => {
+    if (!user || !selectedAddressId || cart.length === 0) {
+      setCheckoutQuote(null)
+      setCheckoutQuoteReady(true)
+      return
+    }
+    let active = true
+    setCheckoutQuoteReady(false)
+    void getCheckoutQuote(selectedAddressId, delivery)
+      .then((quote) => {
+        if (active) setCheckoutQuote(quote)
+      })
+      .catch((error) => {
+        if (!active) return
+        setCheckoutQuote(null)
+        console.error('Unable to calculate checkout totals.', error)
+      })
+      .finally(() => {
+        if (active) setCheckoutQuoteReady(true)
+      })
+    return () => { active = false }
+  }, [cart, delivery, selectedAddressId, user])
+
+  useEffect(() => {
+    if (!authReady) return
+    if (!user) {
+      setAddresses([])
+      setSelectedAddressIdState(null)
+      setOrders([])
+      setWishlistId(null)
+      setWishlist(new Set())
+      return
+    }
+
+    let active = true
+    const localCart = cartRef.current
+    void (async () => {
+      try {
+        if (localCart.length) {
+          await Promise.all(localCart.map((item) => putCartItem({
+            productId: item.productId,
+            quantity: item.quantity,
+            options: item.options,
+          })))
+        }
+        const [remoteCart, remoteAddresses, remoteOrders, remoteWishlists] = await Promise.all([
+          getCart(),
+          listAddresses(),
+          listOrders(),
+          listWishlists(),
+        ])
+        if (!active) return
+        setCart(mapCartItems(remoteCart.items))
+        const mappedAddresses = remoteAddresses.map(mapAddress)
+        setAddresses(mappedAddresses)
+        setSelectedAddressIdState(remoteAddresses.find((address) => address.isDefault)?.id ?? null)
+        setOrders(remoteOrders.items.map(mapOrder))
+        const defaultWishlist = remoteWishlists[0]
+        setWishlistId(defaultWishlist?.id ?? null)
+        setWishlist(new Set(defaultWishlist?.items.map((item) => item.productId) ?? []))
+      } catch (error) {
+        console.error('Unable to load account commerce data.', error)
+        if (active) toast.error(error instanceof Error ? error.message : 'Your saved commerce data could not be loaded.')
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [authReady, user])
 
   const refreshNegotiations = useCallback(async (showError = true) => {
     if (!user) return
@@ -386,31 +565,53 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
 
   const addToCart = useCallback((product: Product, quantity = 1, options: Record<string, string> = {}) => {
     const key = cartKey(product.id, options)
+    const existing = cart.find((item) => item.key === key)
+    const nextQuantity = Math.min(product.stock, (existing?.quantity ?? 0) + quantity)
     setCart((prev) => {
-      const existing = prev.find((i) => i.key === key)
-      if (existing) {
-        return prev.map((i) => (i.key === key ? { ...i, quantity: Math.min(product.stock, i.quantity + quantity) } : i))
-      }
-      return [...prev, { key, productId: product.id, quantity: Math.min(product.stock, quantity), options }]
+      return existing
+        ? prev.map((item) => (item.key === key ? { ...item, quantity: nextQuantity } : item))
+        : [...prev, { key, productId: product.id, quantity: nextQuantity, options }]
     })
+    if (user) {
+      void putCartItem({ productId: product.id, quantity: nextQuantity, options })
+        .then((response) => setCart(mapCartItems(response.items)))
+        .catch((error) => toast.error(error instanceof Error ? error.message : 'The item could not be saved to your cart.'))
+    }
     toast.success('Added to cart', { description: product.name, action: { label: 'View cart', onClick: () => (window.location.href = '/cart') } })
-  }, [products])
+  }, [cart, user])
 
   const updateQuantity = useCallback((key: string, quantity: number) => {
+    let updatedItem: CartItem | undefined
     setCart((prev) =>
       prev.map((i) => {
         if (i.key !== key) return i
         const stock = products.find((p) => p.id === i.productId)?.stock ?? 1
-        return { ...i, quantity: Math.max(1, Math.min(stock, quantity)) }
+        updatedItem = { ...i, quantity: Math.max(1, Math.min(stock, quantity)) }
+        return updatedItem
       }),
     )
-  }, [products])
+    if (user && updatedItem) {
+      void putCartItem({
+        productId: updatedItem.productId,
+        quantity: updatedItem.quantity,
+        options: updatedItem.options,
+      }).then((response) => setCart(mapCartItems(response.items)))
+        .catch((error) => toast.error(error instanceof Error ? error.message : 'The cart quantity could not be updated.'))
+    }
+  }, [products, user])
 
   const removeFromCart = useCallback((key: string) => {
+    const item = cart.find((entry) => entry.key === key)
     setCart((prev) => prev.filter((i) => i.key !== key))
-  }, [])
+    if (user && item?.apiItemId) {
+      void deleteCartItem(item.apiItemId)
+        .then((response) => setCart(mapCartItems(response.items)))
+        .catch((error) => toast.error(error instanceof Error ? error.message : 'The cart item could not be removed.'))
+    }
+  }, [cart, user])
 
   const toggleWishlist = useCallback((product: Product) => {
+    const removing = wishlist.has(product.id)
     setWishlist((prev) => {
       const next = new Set(prev)
       if (next.has(product.id)) {
@@ -422,7 +623,27 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
       }
       return next
     })
-  }, [])
+    if (user) {
+      void (async () => {
+        let currentWishlistId = wishlistId
+        if (!currentWishlistId) {
+          const created = await createWishlist({ name: 'Saved items', occasion: 'just-because' })
+          currentWishlistId = created.id
+          setWishlistId(created.id)
+        }
+        if (removing) await removeWishlistItem(currentWishlistId, product.id)
+        else await addWishlistItem(currentWishlistId, product.id)
+      })().catch((error) => {
+        setWishlist((previous) => {
+          const next = new Set(previous)
+          if (removing) next.add(product.id)
+          else next.delete(product.id)
+          return next
+        })
+        toast.error(error instanceof Error ? error.message : 'The wishlist could not be updated.')
+      })
+    }
+  }, [user, wishlist, wishlistId])
 
   const upsertConversation = useCallback((conversation: Conversation) => {
     setConversations((prev) => [
@@ -474,10 +695,7 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
       try {
         let mediaId: string | undefined
         if (message.voiceNote?.blob) {
-          const voiceFile = new File([message.voiceNote.blob], 'voice-note.webm', {
-            type: message.voiceNote.blob.type || 'audio/webm',
-          })
-          mediaId = (await uploadMedia(voiceFile, 'MESSAGE')).id
+          mediaId = (await uploadMedia(createVoiceNoteFile(message.voiceNote.blob), 'MESSAGE')).id
         }
         if (message.image) {
           throw new Error('Image messages are not available yet. Send text or a voice note instead.')
@@ -529,10 +747,7 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
       const apiProduct = await resolveApiProduct(product)
       let mediaId: string | undefined
       if (input.voiceNote?.blob) {
-        const voiceFile = new File([input.voiceNote.blob], 'offer-voice-note.webm', {
-          type: input.voiceNote.blob.type || 'audio/webm',
-        })
-        mediaId = (await uploadMedia(voiceFile, 'MESSAGE')).id
+        mediaId = (await uploadMedia(createVoiceNoteFile(input.voiceNote.blob), 'MESSAGE')).id
       }
       const created = await createBuyerOffer({
         productId: apiProduct.id,
@@ -591,57 +806,53 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
     [isSeller, notify, products, upsertConversation, user],
   )
 
-  const saveAddress: ShopContextValue['saveAddress'] = useCallback((input) => {
-    const address: Address = { ...input, id: input.id ?? uid('addr') }
-    setAddresses((prev) => (prev.some((a) => a.id === address.id) ? prev.map((a) => (a.id === address.id ? address : a)) : [...prev, address]))
-    setSelectedAddressId(address.id)
-    return address
-  }, [])
-
-  const removeAddress = useCallback((id: string) => {
-    setAddresses((prev) => {
-      const next = prev.filter((a) => a.id !== id)
-      setSelectedAddressId((current) => (current === id ? (next[0]?.id ?? null) : current))
-      return next
+  const saveAddress: ShopContextValue['saveAddress'] = useCallback(async (input) => {
+    requireSignIn()
+    const saved = await saveAddressApi({
+      id: input.id,
+      fullName: input.fullName,
+      phone: input.phone,
+      googlePlaceId: input.googlePlaceId,
+      line1: input.line1,
+      city: input.city,
+      state: input.state,
+      label: input.label,
+      landmark: input.landmark,
+      isDefault: input.isDefault ?? !input.id,
     })
-  }, [])
+    const address = mapAddress(saved)
+    setAddresses((prev) => prev.some((item) => item.id === address.id)
+      ? prev.map((item) => item.id === address.id ? address : item)
+      : [...prev, address])
+    setSelectedAddressIdState(address.id)
+    return address
+  }, [requireSignIn])
 
-  const placeOrder = useCallback(
-    (payment: PaymentMethod) => {
-      const address = addresses.find((a) => a.id === selectedAddressId)
-      if (!address || cart.length === 0) return null
-      const items = cart.flatMap((i) => {
-        const product = products.find((p) => p.id === i.productId)
-        return product ? [{ productId: i.productId, quantity: i.quantity, unitPrice: priceFor(product), options: i.options }] : []
-      })
-      const subtotal = items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0)
-      const deliveryFee = subtotal >= FREE_DELIVERY_THRESHOLD && delivery === 'standard' ? 0 : deliveryOptions[delivery].fee
-      const serviceFee = Math.round(subtotal * SERVICE_FEE_RATE)
-      const order: Order = {
-        id: `OMZ-${Math.floor(10000 + Math.random() * 89999)}`,
-        items,
-        address,
-        delivery,
-        payment,
-        subtotal,
-        deliveryFee,
-        serviceFee,
-        total: subtotal + deliveryFee + serviceFee,
-        status: payment === 'transfer' ? 'placed' : 'confirmed',
-        placedAt: Date.now(),
-      }
-      setOrders((prev) => [order, ...prev])
-      setCart([])
-      notify({
-        type: 'order',
-        title: `Order ${order.id} placed`,
-        body: payment === 'transfer' ? 'We will confirm your order once your transfer is received.' : `Payment confirmed. Total ${formatPrice(order.total)}.`,
-        href: `/orders/${order.id}`,
-      })
-      return order
-    },
-    [addresses, selectedAddressId, cart, delivery, priceFor, notify, products],
-  )
+  const removeAddress = useCallback(async (id: string) => {
+    requireSignIn()
+    await deleteAddress(id)
+    setAddresses((prev) => prev.filter((address) => address.id !== id))
+    setSelectedAddressIdState((current) => current === id ? null : current)
+  }, [requireSignIn])
+
+  const checkout = useCallback(async (options?: { saveCard?: boolean; savedPaymentMethodId?: string }) => {
+    requireSignIn()
+    if (!selectedAddressId) throw new Error('Choose a delivery address before checkout.')
+    if (cart.length === 0) throw new Error('Your cart is empty.')
+    const result = await checkoutOrder({
+      addressId: selectedAddressId,
+      deliveryMethod: delivery,
+      ...options,
+    })
+    setCart([])
+    setOrders((prev) => [mapOrder(result.order), ...prev.filter((order) => order.id !== result.order.id)])
+    return result
+  }, [cart, delivery, requireSignIn, selectedAddressId])
+
+  const confirmDelivery = useCallback(async (orderId: string) => {
+    await confirmOrderDelivery(orderId)
+    await refreshOrders()
+  }, [refreshOrders])
 
   const cartCount = cart.reduce((sum, i) => sum + i.quantity, 0)
 
@@ -651,13 +862,14 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
       priceFor, acceptedOfferFor, offers, submitOffer, respondToOffer,
       conversations, openConversation, sendMessage, retryMessage, markRead,
       addresses, saveAddress, removeAddress, selectedAddressId, setSelectedAddressId, delivery, setDelivery,
-      orders, placeOrder,
+      orders, checkout, refreshOrders, confirmDelivery, checkoutQuote, checkoutQuoteReady,
     }),
     [
       cart, cartCount, wishlist, addToCart, updateQuantity, removeFromCart, toggleWishlist,
       priceFor, acceptedOfferFor, offers, submitOffer, respondToOffer,
       conversations, openConversation, sendMessage, retryMessage, markRead,
-      addresses, saveAddress, removeAddress, selectedAddressId, delivery, orders, placeOrder,
+      addresses, saveAddress, removeAddress, selectedAddressId, setSelectedAddressId, delivery, orders, checkout, refreshOrders,
+      confirmDelivery, checkoutQuote, checkoutQuoteReady,
     ],
   )
 
@@ -671,25 +883,28 @@ export function useShop() {
 }
 
 export function useCartTotals() {
-  const { cart, priceFor, delivery } = useShop()
+  const { cart, priceFor, delivery, checkoutQuote, checkoutQuoteReady } = useShop()
   const { products } = useCatalogProducts()
   const lines = cart.flatMap((item) => {
     const product = products.find((p) => p.id === item.productId)
     return product ? [{ item, product, unitPrice: priceFor(product) }] : []
   })
-  const subtotal = lines.reduce((sum, l) => sum + l.unitPrice * l.item.quantity, 0)
+  const localSubtotal = lines.reduce((sum, l) => sum + l.unitPrice * l.item.quantity, 0)
   const listSubtotal = lines.reduce((sum, l) => sum + (l.product.compareAt ?? l.product.price) * l.item.quantity, 0)
-  const freeDelivery = subtotal >= FREE_DELIVERY_THRESHOLD && delivery === 'standard'
-  const deliveryFee = lines.length === 0 ? 0 : freeDelivery ? 0 : deliveryOptions[delivery].fee
-  const serviceFee = Math.round(subtotal * SERVICE_FEE_RATE)
+  const subtotal = checkoutQuote?.subtotal ?? localSubtotal
+  const freeDelivery = checkoutQuote ? checkoutQuote.deliveryFee === 0 : subtotal >= FREE_DELIVERY_THRESHOLD && delivery === 'standard'
+  const deliveryFee = checkoutQuote?.deliveryFee ?? (lines.length === 0 ? 0 : freeDelivery ? 0 : deliveryOptions[delivery].fee)
+  const serviceFee = checkoutQuote?.serviceFee ?? Math.round(subtotal * SERVICE_FEE_RATE)
+  const total = checkoutQuote?.total ?? subtotal + deliveryFee + serviceFee
   return {
     lines,
     subtotal,
     savings: Math.max(0, listSubtotal - subtotal),
     deliveryFee,
     serviceFee,
-    total: subtotal + deliveryFee + serviceFee,
+    total,
     freeDelivery,
     remainingForFree: Math.max(0, FREE_DELIVERY_THRESHOLD - subtotal),
+    quoteReady: checkoutQuoteReady,
   }
 }

@@ -1,8 +1,16 @@
 'use client'
 
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useAuth } from '@/components/auth-provider'
+import {
+  getNotificationPreferences,
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  updateNotificationPreference,
+} from '@/lib/api'
 
-export type NotificationType = 'order' | 'offer' | 'message' | 'wishlist' | 'account' | 'promo'
+export type NotificationType = 'order' | 'offer' | 'message' | 'wishlist' | 'account' | 'promo' | 'market' | 'support'
 
 export type AppNotification = {
   id: string
@@ -34,34 +42,62 @@ export const notificationTypeLabels: Record<NotificationType, { label: string; d
   wishlist: { label: 'Wishlist & gifts', description: 'Price drops, back in stock and gifts from friends' },
   account: { label: 'Account & security', description: 'Sign-ins, password changes and seller application status' },
   promo: { label: 'Deals & promotions', description: 'Flash sales and offers picked for you' },
+  market: { label: 'Open Market', description: 'Responses and updates to your purchase requests' },
+  support: { label: 'Support tickets', description: 'Replies and updates to your support requests' },
 }
 
-const hours = (h: number) => Date.now() - h * 60 * 60 * 1000
-
-const seed: AppNotification[] = [
-  { id: 'n1', type: 'order', title: 'Order OMZ-48213 has shipped', body: 'Your HUSH headphones and serum are on the way. Expected in 2–3 days.', href: '/orders/OMZ-48213', at: hours(2), read: false },
-  { id: 'n2', type: 'wishlist', title: 'Price drop on a saved item', body: 'An item on your wishlist is now cheaper. Grab it before it sells out.', href: '/wishlist', at: hours(9), read: false },
-  { id: 'n3', type: 'promo', title: 'Flash deals end tonight', body: 'Up to 40% off phones, fashion and home essentials.', href: '/#deals', at: hours(26), read: true },
-  { id: 'n4', type: 'account', title: 'Welcome to OpenMarketz', body: 'Save addresses, build wishlists and chat with verified sellers.', href: '/account', at: hours(80), read: true },
-]
-
 const defaultPrefs: NotificationPrefs = {
-  order: { inApp: true, email: true, sms: true },
-  offer: { inApp: true, email: true, sms: false },
+  order: { inApp: true, email: false, sms: false },
+  offer: { inApp: true, email: false, sms: false },
   message: { inApp: true, email: false, sms: false },
-  wishlist: { inApp: true, email: true, sms: false },
-  account: { inApp: true, email: true, sms: true },
+  wishlist: { inApp: true, email: false, sms: false },
+  account: { inApp: true, email: false, sms: false },
   promo: { inApp: true, email: false, sms: false },
+  market: { inApp: true, email: false, sms: false },
+  support: { inApp: true, email: false, sms: false },
 }
 
 const NotificationsContext = createContext<NotificationsContextValue | null>(null)
 
 export function NotificationsProvider({ children }: { children: React.ReactNode }) {
-  const [notifications, setNotifications] = useState<AppNotification[]>(seed)
+  const { user, authReady } = useAuth()
+  const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [prefs, setPrefs] = useState<NotificationPrefs>(defaultPrefs)
 
   const prefsRef = useRef(prefs)
   prefsRef.current = prefs
+
+  useEffect(() => {
+    if (!authReady) return
+    if (!user) {
+      setNotifications([])
+      setPrefs(defaultPrefs)
+      return
+    }
+    let active = true
+    void Promise.all([listNotifications(), getNotificationPreferences()])
+      .then(([notificationResponse, preferenceResponse]) => {
+        if (!active) return
+        setNotifications(notificationResponse.items.map((item) => ({
+          id: item.id,
+          type: (item.type.toLowerCase() === 'market_request' ? 'market' : item.type.toLowerCase()) as NotificationType,
+          title: item.title,
+          body: item.body,
+          href: item.href ?? '/notifications',
+          at: new Date(item.createdAt).getTime(),
+          read: Boolean(item.readAt),
+        })))
+        setPrefs((previous) => ({
+          ...previous,
+          ...Object.fromEntries(preferenceResponse.map((item) => {
+            const type = item.type.toLowerCase() === 'market_request' ? 'market' : item.type.toLowerCase()
+            return [type, { inApp: item.inApp, email: item.email, sms: item.sms }]
+          })),
+        }))
+      })
+      .catch((error) => console.error('Unable to load persisted notifications.', error))
+    return () => { active = false }
+  }, [authReady, user])
 
   const notify = useCallback<NotificationsContextValue['notify']>((n) => {
     if (!prefsRef.current[n.type].inApp) return
@@ -71,11 +107,17 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
 
   const markRead = useCallback((id: string) => {
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))
+    if (!id.startsWith('n_')) {
+      void markNotificationRead(id).catch((error) => console.error('Unable to mark the notification as read.', error))
+    }
   }, [])
 
   const markAllRead = useCallback(() => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
-  }, [])
+    if (user) {
+      void markAllNotificationsRead().catch((error) => console.error('Unable to mark notifications as read.', error))
+    }
+  }, [user])
 
   const remove = useCallback((id: string) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id))
@@ -83,6 +125,13 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
 
   const setPref = useCallback<NotificationsContextValue['setPref']>((type, channel, value) => {
     setPrefs((prev) => ({ ...prev, [type]: { ...prev[type], [channel]: value } }))
+    const apiType = type === 'market' ? 'MARKET_REQUEST' : type.toUpperCase()
+    void updateNotificationPreference({
+      type: apiType,
+      inApp: channel === 'inApp' ? value : prefsRef.current[type].inApp,
+      email: channel === 'email' ? value : prefsRef.current[type].email,
+      sms: channel === 'sms' ? value : prefsRef.current[type].sms,
+    }).catch((error) => console.error('Unable to save notification preference.', error))
   }, [])
 
   const unreadCount = notifications.filter((n) => !n.read).length

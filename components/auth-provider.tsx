@@ -48,6 +48,7 @@ export type SellerApplicationInput = {
 
 export type User = {
   id: string
+  role: string
   firstName: string
   lastName: string
   email: string
@@ -64,7 +65,7 @@ export type User = {
   seller?: SellerApplication
 }
 
-export type SignUpInput = Omit<User, 'id' | 'emailVerified' | 'twoFactor' | 'createdAt' | 'seller' | 'avatarUrl'> & {
+export type SignUpInput = Omit<User, 'id' | 'role' | 'emailVerified' | 'twoFactor' | 'createdAt' | 'seller' | 'avatarUrl'> & {
   password: string
 }
 
@@ -73,6 +74,7 @@ type SignInResult = { ok: true; redirectTo?: string } | { ok: false; error: stri
 
 type ApiUser = {
   id: string
+  role: string
   firstName: string
   lastName: string
   email: string
@@ -135,7 +137,6 @@ type AuthContextValue = {
   updateProfile: (patch: Partial<Omit<User, 'id' | 'email' | 'createdAt'>>) => Promise<Result>
   changePassword: (current: string, next: string) => Promise<Result>
   submitSellerApplication: (app: SellerApplicationInput) => Promise<Result>
-  refreshSellerApplication: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -146,6 +147,7 @@ function mapApiUser(apiUser: ApiUser): User {
 
   return {
     id: apiUser.id,
+    role: apiUser.role,
     firstName: apiUser.firstName,
     lastName: apiUser.lastName,
     email: apiUser.email,
@@ -402,22 +404,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [],
   )
 
-  const refreshSellerApplication = useCallback<
-    AuthContextValue['refreshSellerApplication']
-  >(async () => {
-    try {
-      const application = await apiRequest<ApiSellerApplication | null>(
-        'seller/applications/me',
-        {},
-        { accessToken: getAccessToken() ?? undefined },
-      )
-      const seller = application ? mapSellerApplication(application) : undefined
-      setUser((current) => (current ? { ...current, seller } : current))
-    } catch (error) {
-      console.error('Unable to refresh the seller application.', error)
-    }
-  }, [])
-
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -432,7 +418,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updateProfile,
       changePassword,
       submitSellerApplication,
-      refreshSellerApplication,
     }),
     [
       user,
@@ -447,7 +432,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updateProfile,
       changePassword,
       submitSellerApplication,
-      refreshSellerApplication,
     ],
   )
 

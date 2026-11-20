@@ -2,27 +2,50 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
-import { Building2, CreditCard, Hash, Loader2, Lock, MapPin, Wallet } from 'lucide-react'
-import { deliveryOptions, useCartTotals, useShop, type PaymentMethod } from '@/components/shop-provider'
+import { useEffect, useState } from 'react'
+import { Check, CreditCard, Loader2, Lock, ShieldCheck } from 'lucide-react'
+import { deliveryOptions, useCartTotals, useShop } from '@/components/shop-provider'
 import { CheckoutSteps, OrderSummary, fieldClass } from '@/components/checkout/checkout-ui'
 import { formatPrice } from '@/lib/data'
+import { listSavedPaymentMethods, submitPaymentChallenge, type ApiSavedPaymentMethod } from '@/lib/api'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-
-const methods: { id: PaymentMethod; label: string; hint: string; icon: typeof CreditCard }[] = [
-  { id: 'card', label: 'Debit / credit card', hint: 'Verve, Visa, Mastercard', icon: CreditCard },
-  { id: 'transfer', label: 'Bank transfer', hint: 'Pay into a one-time account', icon: Building2 },
-  { id: 'ussd', label: 'USSD', hint: 'Dial a code from any bank', icon: Hash },
-  { id: 'pod', label: 'Pay on delivery', hint: 'Cash or POS at your door', icon: Wallet },
-]
 
 export function PaymentView() {
   const router = useRouter()
-  const { addresses, selectedAddressId, delivery, placeOrder } = useShop()
-  const { lines, total } = useCartTotals()
-  const [method, setMethod] = useState<PaymentMethod>('card')
+  const { addresses, selectedAddressId, delivery, checkout } = useShop()
+  const { lines, total, quoteReady } = useCartTotals()
+  const [methods, setMethods] = useState<ApiSavedPaymentMethod[]>([])
+  const [selectedMethodId, setSelectedMethodId] = useState('')
+  const [saveCard, setSaveCard] = useState(false)
   const [processing, setProcessing] = useState(false)
+  const [challenge, setChallenge] = useState<{
+    orderId: string
+    reference: string
+    status: 'send_otp' | 'send_pin' | 'send_phone' | 'send_birthday'
+    message: string
+  } | null>(null)
+  const [challengeValue, setChallengeValue] = useState('')
+  const [error, setError] = useState('')
   const address = addresses.find((a) => a.id === selectedAddressId)
+  const challengeInfo = challenge ? {
+    send_otp: { label: 'One-time password', type: 'otp' as const, input: 'text', placeholder: 'Enter the code from your bank' },
+    send_pin: { label: 'Card PIN', type: 'pin' as const, input: 'password', placeholder: 'Enter your card PIN' },
+    send_phone: { label: 'Phone number', type: 'phone' as const, input: 'tel', placeholder: 'Enter the phone number registered with your bank' },
+    send_birthday: { label: 'Date of birth', type: 'birthday' as const, input: 'text', placeholder: 'YYYY-MM-DD' },
+  }[challenge.status] : null
+
+  useEffect(() => {
+    let active = true
+    void listSavedPaymentMethods()
+      .then((savedMethods) => {
+        if (active) setMethods(savedMethods)
+      })
+      .catch((cause) => {
+        if (active) console.error('Unable to load saved payment methods.', cause)
+      })
+    return () => { active = false }
+  }, [])
 
   if (lines.length === 0 || !address) {
     return (
@@ -35,134 +58,204 @@ export function PaymentView() {
     )
   }
 
-  const pay = (e: React.FormEvent) => {
+  async function pay(e: React.FormEvent) {
     e.preventDefault()
+    setError('')
     setProcessing(true)
-    setTimeout(() => {
-      const order = placeOrder(method)
-      if (order) router.push(`/checkout/success?order=${order.id}`)
-      else setProcessing(false)
-    }, 1400)
+    try {
+      const result = await checkout({
+        saveCard,
+        savedPaymentMethodId: selectedMethodId || undefined,
+      })
+      if (result.payment.authorizationUrl?.startsWith('https://')) {
+        window.location.assign(result.payment.authorizationUrl)
+        return
+      }
+      if (result.payment.status && result.payment.status in {
+        send_otp: true,
+        send_pin: true,
+        send_phone: true,
+        send_birthday: true,
+      }) {
+        const status = result.payment.status as NonNullable<typeof challenge>['status']
+        const label = {
+          send_otp: 'one-time password',
+          send_pin: 'card PIN',
+          send_phone: 'phone number',
+          send_birthday: 'date of birth',
+        }[status]
+        setChallenge({
+          orderId: result.order.id,
+          reference: result.payment.reference,
+          status,
+          message: `Your bank requested your ${label} to authorize this charge.`,
+        })
+        return
+      }
+      if (result.payment.status === 'success') {
+        router.push(`/checkout/success?order=${encodeURIComponent(result.order.id)}&reference=${encodeURIComponent(result.payment.reference)}`)
+        return
+      }
+      throw new Error(result.payment.status
+        ? `The saved card requires another verification step (${result.payment.status}). Choose a different payment method.`
+        : 'Paystack did not return a payment authorization link.')
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'Payment could not be started.'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setProcessing(false)
+    }
+  }
+
+  async function submitChallenge(e: React.FormEvent) {
+    e.preventDefault()
+    if (!challenge || !challengeInfo) return
+    setProcessing(true)
+    setError('')
+    try {
+      const result = await submitPaymentChallenge(challenge.reference, challengeInfo.type, challengeValue)
+      if (result.status === 'success') {
+        router.push(`/checkout/success?order=${encodeURIComponent(challenge.orderId)}&reference=${encodeURIComponent(result.reference)}`)
+        return
+      }
+      if (result.status in { send_otp: true, send_pin: true, send_phone: true, send_birthday: true }) {
+        setChallenge({
+          ...challenge,
+          status: result.status as NonNullable<typeof challenge>['status'],
+          message: result.message ?? 'Your bank requested another verification step.',
+        })
+        setChallengeValue('')
+        return
+      }
+      throw new Error(result.message ?? 'The bank verification was not accepted.')
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'Bank verification failed.'
+      setError(message)
+    } finally {
+      setProcessing(false)
+    }
   }
 
   return (
     <>
       <CheckoutSteps current={2} />
       <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_380px]">
-        <form id="payment-form" onSubmit={pay} className="flex flex-col gap-8">
+        <form id="payment-form" onSubmit={challenge ? submitChallenge : pay} className="flex flex-col gap-8">
           <section className="flex items-start gap-4 rounded-2xl border bg-card p-4">
-            <MapPin className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />
+            <CreditCard className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />
             <div className="flex-1 text-sm">
               <p className="font-medium">{`Delivering to ${address.fullName}`}</p>
               <p className="text-muted-foreground">{`${address.line1}, ${address.city}, ${address.state}`}</p>
               <p className="mt-1 text-muted-foreground">{`${deliveryOptions[delivery].label} · ${deliveryOptions[delivery].eta}`}</p>
             </div>
-            <Link href="/checkout/address" className="text-sm font-medium text-primary hover:underline">
-              Change
-            </Link>
+            <Link href="/checkout/address" className="text-sm font-medium text-primary hover:underline">Change</Link>
           </section>
 
-          <fieldset>
-            <legend className="font-display text-2xl font-semibold tracking-tight">Payment method</legend>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              {methods.map((m) => {
-                const active = method === m.id
-                return (
-                  <label
-                    key={m.id}
-                    className={cn(
-                      'flex cursor-pointer items-center gap-3 rounded-2xl border p-4 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring',
-                      active ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:bg-muted/50',
-                    )}
-                  >
-                    <input type="radio" name="method" value={m.id} checked={active} onChange={() => setMethod(m.id)} className="sr-only" />
-                    <span className={cn('flex size-10 items-center justify-center rounded-xl', active ? 'bg-primary text-primary-foreground' : 'bg-muted')}>
-                      <m.icon className="size-5" aria-hidden="true" />
-                    </span>
-                    <span>
-                      <span className="block text-sm font-medium">{m.label}</span>
-                      <span className="text-xs text-muted-foreground">{m.hint}</span>
-                    </span>
+          {challenge && challengeInfo ? (
+            <section>
+              <h1 className="font-display text-2xl font-semibold tracking-tight">Verify your card</h1>
+              <p className="mt-2 text-sm text-muted-foreground">{challenge.message}</p>
+              <label htmlFor="payment-challenge" className="mt-5 block text-sm font-medium">{challengeInfo.label}</label>
+              <input
+                id="payment-challenge"
+                autoComplete={challenge.status === 'send_otp' ? 'one-time-code' : 'off'}
+                inputMode={challenge.status === 'send_otp' || challenge.status === 'send_pin' ? 'numeric' : undefined}
+                type={challengeInfo.input}
+                placeholder={challengeInfo.placeholder}
+                required
+                value={challengeValue}
+                onChange={(event) => setChallengeValue(event.target.value)}
+                className={`${fieldClass} mt-2 max-w-sm`}
+              />
+            </section>
+          ) : (
+            <>
+              <section>
+                <h1 className="font-display text-2xl font-semibold tracking-tight">Pay securely with Paystack</h1>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Your card details are entered on Paystack’s secure checkout. Card, bank transfer and USSD options depend on what Paystack enables for your account.
+                </p>
+                {methods.length > 0 && (
+                  <fieldset className="mt-5">
+                    <legend className="text-sm font-medium">Saved cards</legend>
+                    <div className="mt-3 grid gap-3">
+                      {methods.map((method) => {
+                        const active = selectedMethodId === method.id
+                        return (
+                          <label key={method.id} className={cn(
+                            'flex cursor-pointer items-center gap-3 rounded-2xl border p-4',
+                            active ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:bg-muted/50',
+                          )}>
+                            <input
+                              type="radio"
+                              name="saved-method"
+                              value={method.id}
+                              checked={active}
+                              onChange={() => setSelectedMethodId(method.id)}
+                              className="accent-primary"
+                            />
+                            <CreditCard className="size-5 text-primary" aria-hidden="true" />
+                            <span className="text-sm font-medium">
+                              {`${method.cardType ?? 'Card'} ending in ${method.last4}`}
+                              <span className="ml-2 text-xs font-normal text-muted-foreground">{`${method.expMonth}/${method.expYear}`}</span>
+                            </span>
+                            {active && <Check className="ml-auto size-4 text-primary" aria-hidden="true" />}
+                          </label>
+                        )
+                      })}
+                      <label className={cn(
+                        'flex cursor-pointer items-center gap-3 rounded-2xl border p-4',
+                        !selectedMethodId ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:bg-muted/50',
+                      )}>
+                        <input
+                          type="radio"
+                          name="saved-method"
+                          value=""
+                          checked={!selectedMethodId}
+                          onChange={() => setSelectedMethodId('')}
+                          className="accent-primary"
+                        />
+                        <span className="text-sm font-medium">Use a different payment method</span>
+                      </label>
+                    </div>
+                  </fieldset>
+                )}
+                {!selectedMethodId && (
+                  <label className="mt-5 flex items-start gap-3 text-sm">
+                    <input type="checkbox" checked={saveCard} onChange={(event) => setSaveCard(event.target.checked)} className="mt-0.5 accent-primary" />
+                    <span>Save this card for future purchases using Paystack’s secure authorization. OpenMarketz never stores card numbers or CVV.</span>
                   </label>
-                )
-              })}
-            </div>
-          </fieldset>
-
-          <section className="rounded-2xl border bg-card p-5" aria-live="polite">
-            {method === 'card' && (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="flex flex-col gap-1.5 sm:col-span-2">
-                  <label htmlFor="card-number" className="text-sm font-medium">Card number</label>
-                  <input id="card-number" inputMode="numeric" autoComplete="cc-number" placeholder="5399 0000 0000 0000" className={fieldClass} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="card-exp" className="text-sm font-medium">Expiry</label>
-                  <input id="card-exp" autoComplete="cc-exp" placeholder="MM / YY" className={fieldClass} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="card-cvv" className="text-sm font-medium">CVV</label>
-                  <input id="card-cvv" inputMode="numeric" autoComplete="cc-csc" placeholder="123" className={fieldClass} />
-                </div>
-              </div>
-            )}
-            {method === 'transfer' && (
-              <div className="text-sm">
-                <p className="text-muted-foreground">Transfer the exact amount to this one-time account. It expires in 30 minutes.</p>
-                <dl className="mt-4 grid gap-3 sm:grid-cols-3">
-                  <Info label="Bank" value="OpenMarketz / Wema" />
-                  <Info label="Account number" value="7810 293 455" />
-                  <Info label="Amount" value={formatPrice(total)} />
-                </dl>
-              </div>
-            )}
-            {method === 'ussd' && (
-              <div className="text-sm">
-                <p className="text-muted-foreground">Dial the code below on the phone linked to your bank account.</p>
-                <p className="mt-4 rounded-xl bg-muted px-4 py-3 font-mono text-lg font-semibold tracking-wide">{`*737*000*${Math.round(total)}#`}</p>
-              </div>
-            )}
-            {method === 'pod' && (
-              <p className="text-sm text-muted-foreground">
-                Pay with cash or POS when the rider arrives. Please have the exact amount ready — riders may not carry change.
-              </p>
-            )}
-            <p className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Lock className="size-3.5" aria-hidden="true" />
-              Payment processing is a preview — no real charge will be made.
-            </p>
-          </section>
+                )}
+              </section>
+              <section className="rounded-2xl border bg-card p-5">
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <ShieldCheck className="size-4 text-primary" aria-hidden="true" />
+                  Your payment is protected and held until delivery is confirmed.
+                </p>
+                <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Lock className="size-3.5" aria-hidden="true" />
+                  Card details are handled by Paystack; they are never sent to or stored by this site.
+                </p>
+              </section>
+            </>
+          )}
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         </form>
 
         <OrderSummary compact>
           <button
             type="submit"
             form="payment-form"
-            disabled={processing}
+            disabled={processing || !quoteReady || (!!challenge && !challengeValue.trim())}
             className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-primary text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-70"
           >
-            {processing ? (
-              <>
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                Processing…
-              </>
-            ) : method === 'pod' ? (
-              'Place order'
-            ) : (
-              `Pay ${formatPrice(total)}`
-            )}
+            {processing || !quoteReady ? <><Loader2 className="size-4 animate-spin" aria-hidden="true" />{processing ? 'Processing…' : 'Calculating total…'}</>
+              : challenge ? 'Continue verification'
+                : selectedMethodId ? `Pay ${formatPrice(total)} with saved card` : `Continue to Paystack · ${formatPrice(total)}`}
           </button>
         </OrderSummary>
       </div>
     </>
-  )
-}
-
-function Info({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl bg-muted px-4 py-3">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 font-medium">{value}</dd>
-    </div>
   )
 }

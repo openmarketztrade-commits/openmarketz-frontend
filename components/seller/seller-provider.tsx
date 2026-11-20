@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { getSeller, type Product } from '@/lib/data'
 import { useShop } from '@/components/shop-provider'
 import { useAuth } from '@/components/auth-provider'
-import { listSellerProducts } from '@/lib/api'
+import { listSellerOrders, listSellerProducts, updateSellerOrderShipment } from '@/lib/api'
 import { mapCatalogProduct, useCatalogProducts } from '@/components/catalog-provider'
 import {
   STORE_ID, newWaybill,
@@ -40,7 +40,7 @@ type SellerValue = {
   setListingStatus: (id: string, status: ListingStatus) => void
   updateStock: (id: string, stock: number) => void
   respondToBargain: (id: string, action: 'accept' | 'decline' | { counter: number }) => Promise<void>
-  advanceOrder: (id: string, next: FulfilmentStatus, dispatch?: { method: DispatchMethod; hub: string }) => void
+  advanceOrder: (id: string, next: FulfilmentStatus, dispatch?: { method: DispatchMethod; hub: string }) => Promise<void>
   markAlertRead: (id: string) => void
   markAllAlertsRead: () => void
 }
@@ -59,6 +59,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   const [listingsError, setListingsError] = useState<string | null>(null)
   const [bargains] = useState<BargainRequest[]>([])
   const [orders, setOrders] = useState<SalesOrder[]>([])
+  const [apiOrders, setApiOrders] = useState<SalesOrder[]>([])
   const [alerts, setAlerts] = useState<SellerAlert[]>([])
   const [shopOverrides, setShopOverrides] = useState<Record<string, Partial<SalesOrder>>>({})
   const [readIds, setReadIds] = useState<Set<string>>(new Set())
@@ -93,6 +94,62 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       .finally(() => {
         if (active) setListingsLoaded(true)
       })
+    return () => { active = false }
+  }, [user?.seller?.status])
+
+  useEffect(() => {
+    if (user?.seller?.status !== 'approved') {
+      setApiOrders([])
+      return
+    }
+    let active = true
+    void listSellerOrders()
+      .then(({ items }) => {
+        if (!active) return
+        setApiOrders(items
+          .filter((order) => order.status !== 'PENDING_PAYMENT' && order.status !== 'CANCELLED' && order.status !== 'REFUNDED')
+          .map((order) => {
+            const shipmentStatus = order.shipment?.status
+            const statusMap: Record<string, FulfilmentStatus> = {
+              AWAITING_DISPATCH: 'awaiting_dispatch',
+              PACKED: 'packed',
+              HANDED_OVER: 'handed_over',
+              IN_TRANSIT: 'in_transit',
+              DELIVERED: 'delivered',
+            }
+            const status = statusMap[shipmentStatus ?? ''] ??
+              (order.status === 'DELIVERED' ? 'delivered' : 'awaiting_dispatch')
+            const placedAt = new Date(order.paidAt ?? order.createdAt).getTime()
+            return {
+              id: order.id,
+              buyer: {
+                name: order.address.fullName,
+                city: `${order.address.city}, ${order.address.state}`,
+                phone: order.address.phone,
+              },
+              items: order.items.map((item) => ({
+                productId: item.productId ?? '',
+                productName: item.productName,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                options: item.options,
+              })),
+              total: order.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0),
+              placedAt,
+              dispatchBy: placedAt + 24 * 3_600_000,
+              status,
+              dispatch: order.shipment ? {
+                method: order.shipment.method === 'pickup' ? 'pickup' : 'dropoff',
+                hub: order.shipment.hub ?? 'OpenMarketz Delivery',
+                waybill: order.shipment.waybill ?? 'Pending',
+                at: placedAt,
+              } : undefined,
+              payout: order.adminConfirmedDeliveredAt ? 'released' : 'escrow',
+              source: 'api',
+            } satisfies SalesOrder
+          }))
+      })
+      .catch((cause) => console.error('Unable to load seller orders from the marketplace API.', cause))
     return () => { active = false }
   }, [user?.seller?.status])
 
@@ -166,7 +223,10 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     [shopOrders, shopBargains, readIds, productById],
   )
 
-  const allOrders = useMemo(() => [...shopOrders, ...orders].sort((a, b) => b.placedAt - a.placedAt), [shopOrders, orders])
+  const allOrders = useMemo(() => {
+    const merged = new Map([...shopOrders, ...orders, ...apiOrders].map((order) => [order.id, order]))
+    return [...merged.values()].sort((a, b) => b.placedAt - a.placedAt)
+  }, [shopOrders, orders, apiOrders])
   const allBargains = useMemo(() => [...shopBargains, ...bargains].sort((a, b) => b.createdAt - a.createdAt), [shopBargains, bargains])
   const allAlerts = useMemo(() => [...derivedAlerts, ...alerts].sort((a, b) => b.at - a.at), [derivedAlerts, alerts])
 
@@ -220,8 +280,17 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   )
 
   const advanceOrder = useCallback<SellerValue['advanceOrder']>(
-    (id, next, dispatch) => {
+    async (id, next, dispatch) => {
       const patch: Partial<SalesOrder> = { status: next }
+      if (apiOrders.some((order) => order.id === id)) {
+        await updateSellerOrderShipment(id, {
+          status: next === 'packed' ? 'PACKED' : next === 'handed_over' ? 'HANDED_OVER' : 'IN_TRANSIT',
+          ...(dispatch ? { method: dispatch.method, hub: dispatch.hub } : {}),
+        })
+        if (dispatch) patch.dispatch = { ...dispatch, waybill: 'Pending', at: Date.now() }
+        setApiOrders((previous) => previous.map((order) => order.id === id ? { ...order, ...patch } : order))
+        return
+      }
       if (dispatch) patch.dispatch = { ...dispatch, waybill: newWaybill(), at: Date.now() }
       if (shop.orders.some((o) => o.id === id)) {
         setShopOverrides((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }))
@@ -238,7 +307,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
         })
       }
     },
-    [shop.orders, pushAlert],
+    [shop.orders, pushAlert, apiOrders],
   )
 
   const markAlertRead = useCallback((id: string) => {

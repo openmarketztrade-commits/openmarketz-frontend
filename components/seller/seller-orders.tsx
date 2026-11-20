@@ -93,13 +93,13 @@ function OrderCard({ order: o, highlighted }: { order: SalesOrder; highlighted: 
 
       <div className="grid gap-4 md:grid-cols-[1fr_240px]">
         <ul className="flex flex-col gap-2">
-          {o.items.map((it) => {
+          {o.items.map((it, index) => {
             const p = productById(it.productId)
             return (
-              <li key={it.productId} className="flex items-center gap-3">
+              <li key={`${it.productId}-${index}`} className="flex items-center gap-3">
                 {p && <Image src={p.image} alt="" width={48} height={48} className="size-12 rounded-xl object-cover" />}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{p?.name}</p>
+                  <p className="truncate text-sm font-medium">{p?.name ?? it.productName ?? 'Marketplace request item'}</p>
                   <p className="text-xs text-muted-foreground">{`Qty ${it.quantity} · ${formatPrice(it.unitPrice)} each`}</p>
                 </div>
               </li>
@@ -128,8 +128,9 @@ function OrderCard({ order: o, highlighted }: { order: SalesOrder; highlighted: 
             <button
               type="button"
               onClick={() => {
-                advanceOrder(o.id, 'packed')
-                toast.success(`${o.id} marked as packed`)
+                void advanceOrder(o.id, 'packed')
+                  .then(() => toast.success(`${o.id} marked as packed`))
+                  .catch((error) => toast.error(error instanceof Error ? error.message : 'Order status could not be updated.'))
               }}
               className="flex h-10 items-center gap-1.5 rounded-xl border px-4 text-sm font-semibold hover:bg-muted"
             >
@@ -144,18 +145,23 @@ function OrderCard({ order: o, highlighted }: { order: SalesOrder; highlighted: 
         </div>
       )}
 
-      <DispatchDialog open={dispatchOpen} onOpenChange={setDispatchOpen} order={o} onConfirm={(method, hub) => {
-        advanceOrder(o.id, 'handed_over', { method, hub })
-        setDispatchOpen(false)
-        toast.success(method === 'pickup' ? 'Pickup booked. A rider is on the way.' : 'Drop-off confirmed. Bring the package to the hub.')
+      <DispatchDialog open={dispatchOpen} onOpenChange={setDispatchOpen} order={o} onConfirm={async (method, hub) => {
+        try {
+          await advanceOrder(o.id, 'handed_over', { method, hub })
+          setDispatchOpen(false)
+          toast.success(method === 'pickup' ? 'Pickup request recorded.' : 'Drop-off at the selected hub recorded.')
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : 'Delivery hand-off could not be recorded.')
+        }
       }} />
     </li>
   )
 }
 
-function DispatchDialog({ open, onOpenChange, order, onConfirm }: { open: boolean; onOpenChange: (v: boolean) => void; order: SalesOrder; onConfirm: (m: DispatchMethod, hub: string) => void }) {
+function DispatchDialog({ open, onOpenChange, order, onConfirm }: { open: boolean; onOpenChange: (v: boolean) => void; order: SalesOrder; onConfirm: (m: DispatchMethod, hub: string) => Promise<void> | void }) {
   const [method, setMethod] = useState<DispatchMethod>('dropoff')
   const [hub, setHub] = useState(dropOffHubs[0])
+  const [submitting, setSubmitting] = useState(false)
   const options: { id: DispatchMethod; title: string; body: string }[] = [
     { id: 'dropoff', title: 'Drop off at a hub', body: 'Free · Bring the package to the nearest OpenMarketz hub.' },
     { id: 'pickup', title: 'Request rider pickup', body: '₦1,000 · A rider collects from your store within 4 hours.' },
@@ -166,7 +172,7 @@ function DispatchDialog({ open, onOpenChange, order, onConfirm }: { open: boolea
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{`Send ${order.id} to delivery`}</DialogTitle>
-          <DialogDescription>Seal the item with the buyer’s order ID written on the package. Delivery is tracked once we scan the waybill.</DialogDescription>
+          <DialogDescription>Choose the hand-off method and hub. The selection will be recorded on this paid order.</DialogDescription>
         </DialogHeader>
         <fieldset className="flex flex-col gap-2">
           <legend className="sr-only">Hand-over method</legend>
@@ -186,9 +192,16 @@ function DispatchDialog({ open, onOpenChange, order, onConfirm }: { open: boolea
             {dropOffHubs.map((h) => <option key={h}>{h}</option>)}
           </Select>
         </label>
-        <button type="button" onClick={() => onConfirm(method, hub)} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground">
+        <button type="button" disabled={submitting} onClick={async () => {
+          setSubmitting(true)
+          try {
+            await onConfirm(method, hub)
+          } finally {
+            setSubmitting(false)
+          }
+        }} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground disabled:opacity-50">
           <Check className="size-4" aria-hidden="true" />
-          Confirm and generate waybill
+          {submitting ? 'Recording…' : 'Confirm hand-off'}
         </button>
       </DialogContent>
     </Dialog>

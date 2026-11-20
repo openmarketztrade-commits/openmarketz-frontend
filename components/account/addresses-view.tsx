@@ -6,11 +6,12 @@ import { Briefcase, Home, MapPin, MoreHorizontal, Pencil, Plus, Star, Trash2 } f
 import { useShop, type Address } from '@/components/shop-provider'
 import { useAuth } from '@/components/auth-provider'
 import { AccountShell } from '@/components/account/account-shell'
-import { Field, Select, SubmitButton, inputClass } from '@/components/forms'
+import { Field, SubmitButton, inputClass } from '@/components/forms'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { getCountry } from '@/lib/geo'
 import { cn } from '@/lib/utils'
+import { AddressPlacePicker } from '@/components/checkout/address-place-picker'
 
 type Draft = Omit<Address, 'id'> & { id?: string }
 
@@ -94,7 +95,10 @@ function AddressList({ onEdit }: { onEdit: (d: Draft) => void }) {
                       <Star className="size-4" aria-hidden="true" /> Set as default
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem onSelect={() => { removeAddress(a.id); toast('Address removed') }} className="text-destructive focus:text-destructive">
+                  <DropdownMenuItem onSelect={() => {
+                    void removeAddress(a.id).then(() => toast('Address removed')).catch((error) =>
+                      toast.error(error instanceof Error ? error.message : 'The address could not be removed.'))
+                  }} className="text-destructive focus:text-destructive">
                     <Trash2 className="size-4" aria-hidden="true" /> Remove
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -130,23 +134,34 @@ function AddressForm({ initial, onDone }: { initial: Draft; onDone: () => void }
   }))
   const [makeDefault, setMakeDefault] = useState(!initial.id)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setForm((f) => ({ ...f, [k]: v }))
 
-  function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     const next: Record<string, string> = {}
     if (form.fullName.trim().length < 3) next.fullName = "Enter the recipient's full name"
     if (!/^\+?[0-9\s-]{10,16}$/.test(form.phone.trim())) next.phone = 'Enter a valid phone number'
-    if (form.line1.trim().length < 5) next.line1 = 'Enter a street address'
-    if (form.city.trim().length < 2) next.city = 'Enter a city or area'
-    if (!form.state) next.state = `Select a ${country.regionLabel.toLowerCase()}`
+    if (!form.googlePlaceId) next.line1 = 'Choose an address from the suggestions'
     setErrors(next)
     if (Object.keys(next).length) return
-    const saved = saveAddress({ ...form, fullName: form.fullName.trim(), line1: form.line1.trim(), city: form.city.trim() })
-    if (makeDefault) setSelectedAddressId(saved.id)
-    toast.success(initial.id ? 'Address updated' : 'Address saved')
-    onDone()
+    setSaving(true)
+    try {
+      const saved = await saveAddress({
+        ...form,
+        fullName: form.fullName.trim(),
+        line1: form.line1.trim(),
+        isDefault: makeDefault,
+      })
+      if (makeDefault) setSelectedAddressId(saved.id)
+      toast.success(initial.id ? 'Address updated' : 'Address saved')
+      onDone()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The address could not be saved.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -174,7 +189,12 @@ function AddressForm({ initial, onDone }: { initial: Draft; onDone: () => void }
       </Field>
       <div className="sm:col-span-2">
         <Field label="Street address" htmlFor="ad-line1" error={errors.line1}>
-          <input id="ad-line1" autoComplete="street-address" placeholder="House number and street name" value={form.line1} onChange={(e) => set('line1', e.target.value)} className={inputClass} />
+          <AddressPlacePicker
+            inputId="ad-line1"
+            value={form.line1}
+            placeId={form.googlePlaceId}
+            onChange={(googlePlaceId, description) => setForm((current) => ({ ...current, googlePlaceId, line1: description }))}
+          />
         </Field>
       </div>
       <div className="sm:col-span-2">
@@ -182,23 +202,13 @@ function AddressForm({ initial, onDone }: { initial: Draft; onDone: () => void }
           <input id="ad-landmark" placeholder="e.g. Opposite Shoprite" value={form.landmark ?? ''} onChange={(e) => set('landmark', e.target.value)} className={inputClass} />
         </Field>
       </div>
-      <Field label="City / Area" htmlFor="ad-city" error={errors.city}>
-        <input id="ad-city" autoComplete="address-level2" value={form.city} onChange={(e) => set('city', e.target.value)} className={inputClass} />
-      </Field>
-      <Field label={country.regionLabel} htmlFor="ad-state" error={errors.state}>
-        <Select id="ad-state" value={form.state} onChange={(e) => set('state', e.target.value)} aria-invalid={!!errors.state}>
-          <option value="">Select</option>
-          {country.regions.map((r) => (
-            <option key={r} value={r}>{r}</option>
-          ))}
-        </Select>
-      </Field>
+      <p className="text-xs text-muted-foreground sm:col-span-2">City and state are verified from the selected Google Places address.</p>
       <label className="flex cursor-pointer items-center gap-3 text-sm sm:col-span-2">
         <input type="checkbox" checked={makeDefault} onChange={(e) => setMakeDefault(e.target.checked)} className="size-4 accent-primary" />
         Use as my default delivery address
       </label>
       <div className="sm:col-span-2">
-        <SubmitButton>{initial.id ? 'Save changes' : 'Save address'}</SubmitButton>
+        <SubmitButton disabled={saving}>{saving ? 'Saving…' : initial.id ? 'Save changes' : 'Save address'}</SubmitButton>
       </div>
     </form>
   )

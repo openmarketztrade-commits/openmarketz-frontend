@@ -2,33 +2,54 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { useState } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import { BadgeCheck, CalendarDays, Check, Clock, Eye, MapPin, MessageCircle, Package, Star, Truck } from 'lucide-react'
-import { formatPrice, getCategory, getSeller, sellers } from '@/lib/data'
-import { ME, conditionLabels, timeAgo, type SellerResponse } from '@/lib/open-market'
+import { formatPrice, getCategory } from '@/lib/data'
+import { conditionLabels, timeAgo, type SellerResponse } from '@/lib/open-market'
 import { useOpenMarket } from '@/components/open-market/open-market-provider'
 import { RequestStatusBadge } from '@/components/open-market/request-card'
-import { Field, FormAlert, Select, SubmitButton, inputClass } from '@/components/forms'
+import { Field, FormAlert, SubmitButton, inputClass } from '@/components/forms'
 import { cn } from '@/lib/utils'
 import { useCatalogProducts } from '@/components/catalog-provider'
+import { useAuth } from '@/components/auth-provider'
+import { toast } from 'sonner'
 
 export function RequestDetails({ id }: { id: string }) {
-  const { requests, responsesFor } = useOpenMarket()
+  const { requests, responsesFor, loadRequest, loadResponses } = useOpenMarket()
+  const { user } = useAuth()
   const posted = useSearchParams().get('posted') === '1'
   const request = requests.find((r) => r.id === id)
+  const [loading, setLoading] = useState(!request)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    void loadRequest(id)
+      .catch((error) => toast.error(error instanceof Error ? error.message : 'The request could not be loaded.'))
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => { active = false }
+  }, [id, loadRequest])
+
+  useEffect(() => {
+    if (user) {
+      void loadResponses(id).catch((error) => toast.error(error instanceof Error ? error.message : 'Seller offers could not be loaded.'))
+    }
+  }, [id, loadResponses, user])
 
   if (!request) {
     return (
       <div className="mx-auto flex max-w-md flex-col items-center gap-3 px-4 py-24 text-center">
-        <h1 className="font-display text-2xl font-semibold">Request not found</h1>
-        <Link href="/open-market/requests" className="text-sm font-medium text-primary hover:underline">Browse all requests</Link>
+        <h1 className="font-display text-2xl font-semibold">{loading ? 'Loading request…' : 'Request not found'}</h1>
+        {!loading && <Link href="/open-market/requests" className="text-sm font-medium text-primary hover:underline">Browse all requests</Link>}
       </div>
     )
   }
 
   const responses = responsesFor(request.id)
-  const isMine = request.buyerId === ME
+  const isMine = request.buyerId === user?.id
   const lowest = responses[0]?.price
 
   return (
@@ -39,7 +60,7 @@ export function RequestDetails({ id }: { id: string }) {
         <Link href="/open-market/requests" className="hover:text-foreground">Requests</Link>
       </nav>
 
-      {posted && <div className="mt-4"><FormAlert tone="success">Your request is live. Sellers are being notified now.</FormAlert></div>}
+      {posted && <div className="mt-4"><FormAlert tone="success">Your request is posted. Sellers can now view it and respond.</FormAlert></div>}
 
       <div className="mt-6 grid gap-10 lg:grid-cols-[1fr_380px]">
         <div className="flex flex-col gap-8">
@@ -86,7 +107,7 @@ export function RequestDetails({ id }: { id: string }) {
         </div>
 
         <aside className="lg:sticky lg:top-40 lg:self-start">
-          {isMine ? <BuyerPanel requestStatus={request.status} count={responses.length} /> : request.status === 'open' ? <RespondForm requestId={request.id} budgetMax={request.budgetMax} category={request.category} /> : (
+          {isMine ? <BuyerPanel requestStatus={request.status} count={responses.length} /> : request.status === 'open' ? <RespondForm requestId={request.id} budgetMax={request.budgetMax} /> : (
             <div className="rounded-3xl border bg-card p-6 text-sm text-muted-foreground">This request has been fulfilled and is no longer accepting offers.</div>
           )}
         </aside>
@@ -96,12 +117,17 @@ export function RequestDetails({ id }: { id: string }) {
 }
 
 function OfferCard({ response, isMine, budgetMax }: { response: SellerResponse; isMine: boolean; budgetMax: number }) {
-  const router = useRouter()
   const { acceptResponse, declineResponse } = useOpenMarket()
   const { products } = useCatalogProducts()
-  const seller = getSeller(response.sellerId)
+  const sellerName = response.sellerName ?? 'Seller'
+  const seller = {
+    name: sellerName,
+    slug: response.sellerSlug ?? '',
+    initials: sellerName.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase(),
+    verified: response.sellerVerified ?? false,
+    rating: response.sellerRating ?? 0,
+  }
   const product = response.productId ? products.find((p) => p.id === response.productId) : undefined
-  if (!seller) return null
 
   return (
     <li className={cn('rounded-2xl border bg-card p-5', response.status === 'accepted' && 'border-primary ring-2 ring-primary/20', response.status === 'declined' && 'opacity-60')}>
@@ -115,8 +141,6 @@ function OfferCard({ response, isMine, budgetMax }: { response: SellerResponse; 
             </span>
             <span className="flex items-center gap-2 text-xs text-muted-foreground">
               <span className="flex items-center gap-0.5"><Star className="size-3 fill-current text-amber-500" aria-hidden="true" />{seller.rating}</span>
-              <span>{`${seller.positiveRate}% positive`}</span>
-              <span>{seller.location}</span>
             </span>
           </span>
         </Link>
@@ -145,19 +169,22 @@ function OfferCard({ response, isMine, budgetMax }: { response: SellerResponse; 
         {response.status === 'accepted' ? (
           <div className="flex items-center gap-2">
             <span className="flex items-center gap-1 text-sm font-medium text-primary"><Check className="size-4" aria-hidden="true" />Accepted</span>
-            {isMine && <Link href={`/open-market/checkout/${response.id}`} className="flex h-10 items-center rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground">Checkout</Link>}
+            {isMine && <Link href={`/open-market/checkout/${response.id}`} className="flex h-10 items-center rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground">Continue to payment</Link>}
           </div>
         ) : response.status === 'declined' ? (
           <span className="text-sm text-muted-foreground">Declined</span>
         ) : isMine ? (
           <div className="flex gap-2">
             <Link href="/messages" className="flex h-10 items-center gap-1.5 rounded-xl border px-3 text-sm font-medium hover:bg-muted"><MessageCircle className="size-4" aria-hidden="true" />Chat</Link>
-            <button type="button" onClick={() => declineResponse(response.id)} className="h-10 rounded-xl border px-3 text-sm font-medium hover:bg-muted">Decline</button>
+            <button type="button" onClick={() => {
+              void declineResponse(response.id).catch((error) => toast.error(error instanceof Error ? error.message : 'The offer could not be declined.'))
+            }} className="h-10 rounded-xl border px-3 text-sm font-medium hover:bg-muted">Decline</button>
             <button
               type="button"
               onClick={() => {
-                acceptResponse(response.id)
-                router.push(`/open-market/checkout/${response.id}`)
+                void acceptResponse(response.id)
+                  .then(() => toast.success('Offer accepted.'))
+                  .catch((error) => toast.error(error instanceof Error ? error.message : 'The offer could not be accepted.'))
               }}
               className="h-10 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90"
             >
@@ -176,34 +203,27 @@ function BuyerPanel({ requestStatus, count }: { requestStatus: string; count: nu
       <h2 className="font-display text-lg font-semibold">This is your request</h2>
       <p className="text-sm text-muted-foreground">
         {requestStatus === 'accepted'
-          ? 'You accepted an offer. Complete checkout to have the seller ship your order.'
+          ? 'You accepted an offer. Complete secure Paystack checkout to place the order.'
           : count
-            ? 'Compare offers below. Chat with a seller for more photos, then accept the best one to check out.'
+            ? 'Compare offers below and chat with a seller if you need more details before accepting.'
             : 'Sellers are reviewing your request. We will notify you as offers come in.'}
       </p>
       <ul className="mt-2 flex flex-col gap-2 text-sm">
-        <li className="flex items-center gap-2"><Check className="size-4 text-primary" aria-hidden="true" />Payment held in escrow</li>
-        <li className="flex items-center gap-2"><Check className="size-4 text-primary" aria-hidden="true" />Verified sellers only</li>
-        <li className="flex items-center gap-2"><Check className="size-4 text-primary" aria-hidden="true" />Free returns if not as described</li>
+        <li className="flex items-center gap-2"><Check className="size-4 text-primary" aria-hidden="true" />Accepting an offer does not charge you</li>
       </ul>
     </div>
   )
 }
 
-function RespondForm({ requestId, budgetMax, category }: { requestId: string; budgetMax: number; category: string }) {
+function RespondForm({ requestId, budgetMax }: { requestId: string; budgetMax: number }) {
   const { submitResponse } = useOpenMarket()
-  const { products } = useCatalogProducts()
-  const [sellerId, setSellerId] = useState(sellers[0].id)
   const [price, setPrice] = useState('')
   const [days, setDays] = useState('2')
   const [note, setNote] = useState('')
-  const [productId, setProductId] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [sent, setSent] = useState(false)
-  const listings = products.filter((p) => p.sellerId === sellerId)
-  const sorted = [...listings].sort((a, b) => Number(b.category === category) - Number(a.category === category))
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault()
     const p = Number(price)
     const d = Number(days)
@@ -213,21 +233,20 @@ function RespondForm({ requestId, budgetMax, category }: { requestId: string; bu
     if (note.trim().length < 15) err.note = 'Describe what you are offering (15+ characters).'
     setErrors(err)
     if (Object.keys(err).length) return
-    submitResponse({ requestId, sellerId, price: p, deliveryDays: d, note: note.trim(), productId: productId || undefined })
-    setSent(true)
-    setPrice('')
-    setNote('')
+    try {
+      await submitResponse({ requestId, price: p, deliveryDays: d, note: note.trim() })
+      setSent(true)
+      setPrice('')
+      setNote('')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Your offer could not be sent.')
+    }
   }
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-4 rounded-3xl border bg-card p-6" noValidate>
       <h2 className="font-display text-lg font-semibold">Make an offer</h2>
-      {sent && <FormAlert tone="success">Offer sent! The buyer will be notified.</FormAlert>}
-      <Field label="Respond as" htmlFor="as" hint="Your verified store">
-        <Select id="as" value={sellerId} onChange={(e) => { setSellerId(e.target.value); setProductId('') }}>
-          {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </Select>
-      </Field>
+      {sent && <FormAlert tone="success">Offer submitted. It now appears on this request.</FormAlert>}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Your price (₦)" error={errors.price} hint={`Budget up to ${formatPrice(budgetMax)}`} htmlFor="op">
           <input id="op" inputMode="numeric" value={price} onChange={(e) => setPrice(e.target.value.replace(/\D/g, ''))} className={inputClass} aria-invalid={!!errors.price || undefined} />
@@ -236,12 +255,6 @@ function RespondForm({ requestId, budgetMax, category }: { requestId: string; bu
           <input id="od" type="number" min={1} value={days} onChange={(e) => setDays(e.target.value)} className={inputClass} aria-invalid={!!errors.days || undefined} />
         </Field>
       </div>
-      <Field label="Attach a listing" optional htmlFor="ol">
-        <Select id="ol" value={productId} onChange={(e) => setProductId(e.target.value)}>
-          <option value="">No listing</option>
-          {sorted.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </Select>
-      </Field>
       <Field label="Message to buyer" error={errors.note} htmlFor="on">
         <textarea id="on" rows={4} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Brand, condition, warranty, what's included…" className={cn(inputClass, 'h-auto py-3')} aria-invalid={!!errors.note || undefined} />
       </Field>

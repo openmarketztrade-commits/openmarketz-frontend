@@ -8,19 +8,19 @@ import { formatPrice } from '@/lib/data'
 import { deliveryOptions, useCartTotals, useShop, type Address, type DeliveryMethod } from '@/components/shop-provider'
 import { CheckoutSteps, OrderSummary, fieldClass } from '@/components/checkout/checkout-ui'
 import { cn } from '@/lib/utils'
-
-const states = ['Abuja (FCT)', 'Lagos', 'Ogun', 'Oyo', 'Rivers', 'Kano', 'Kaduna', 'Enugu', 'Anambra', 'Delta', 'Edo', 'Kwara', 'Plateau']
+import { toast } from 'sonner'
 
 type Draft = Omit<Address, 'id'>
-const emptyDraft: Draft = { fullName: '', phone: '', line1: '', city: '', state: 'Lagos', landmark: '', label: 'Home' }
+const emptyDraft: Draft = { fullName: '', phone: '', line1: '', city: '', state: '', landmark: '', label: 'Home' }
 
 export function AddressView() {
   const router = useRouter()
   const { addresses, saveAddress, selectedAddressId, setSelectedAddressId, delivery, setDelivery } = useShop()
-  const { lines } = useCartTotals()
+  const { lines, deliveryFee, quoteReady } = useCartTotals()
   const [adding, setAdding] = useState(addresses.length === 0)
   const [draft, setDraft] = useState<Draft>(emptyDraft)
   const [errors, setErrors] = useState<Partial<Record<keyof Draft, string>>>({})
+  const [savingAddress, setSavingAddress] = useState(false)
 
   if (lines.length === 0) {
     return (
@@ -38,19 +38,33 @@ export function AddressView() {
     setErrors((e) => ({ ...e, [key]: undefined }))
   }
 
-  const submitAddress = (e: React.FormEvent) => {
+  const submitAddress = async (e: React.FormEvent) => {
     e.preventDefault()
     const next: typeof errors = {}
     if (draft.fullName.trim().length < 3) next.fullName = 'Enter your full name'
     if (!/^[0-9+\s]{10,15}$/.test(draft.phone.trim())) next.phone = 'Enter a valid phone number'
-    if (draft.line1.trim().length < 5) next.line1 = 'Enter your street address'
-    if (draft.city.trim().length < 2) next.city = 'Enter your city or area'
+    if (draft.line1.trim().length < 5) next.line1 = 'Enter a complete street address'
+    if (draft.city.trim().length < 2) next.city = 'Enter your city or town'
+    if (draft.state.trim().length < 2) next.state = 'Enter your state'
     setErrors(next)
     if (Object.keys(next).length) return
-    const saved = saveAddress({ ...draft, fullName: draft.fullName.trim(), line1: draft.line1.trim(), city: draft.city.trim() })
-    setSelectedAddressId(saved.id)
-    setDraft(emptyDraft)
-    setAdding(false)
+    setSavingAddress(true)
+    try {
+      const saved = await saveAddress({
+        ...draft,
+        fullName: draft.fullName.trim(),
+        line1: draft.line1.trim(),
+        city: draft.city.trim(),
+        state: draft.state.trim(),
+      })
+      setSelectedAddressId(saved.id)
+      setDraft(emptyDraft)
+      setAdding(false)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The address could not be saved.')
+    } finally {
+      setSavingAddress(false)
+    }
   }
 
   const canContinue = Boolean(selectedAddressId) && !adding
@@ -127,23 +141,44 @@ export function AddressView() {
                 </Field>
                 <Field label="Street address" error={errors.line1} className="sm:col-span-2">
                   {(id) => (
-                    <input id={id} autoComplete="street-address" value={draft.line1} onChange={(e) => update('line1', e.target.value)} aria-invalid={!!errors.line1} className={fieldClass} />
+                    <input
+                      id={id}
+                      autoComplete="street-address"
+                      placeholder="House number and street"
+                      value={draft.line1}
+                      onChange={(event) => update('line1', event.target.value)}
+                      aria-invalid={!!errors.line1}
+                      className={fieldClass}
+                    />
                   )}
                 </Field>
-                <Field label="City / Area" error={errors.city}>
+                <Field label="City or town" error={errors.city}>
                   {(id) => (
-                    <input id={id} autoComplete="address-level2" value={draft.city} onChange={(e) => update('city', e.target.value)} aria-invalid={!!errors.city} className={fieldClass} />
+                    <input
+                      id={id}
+                      autoComplete="address-level2"
+                      value={draft.city}
+                      onChange={(event) => update('city', event.target.value)}
+                      aria-invalid={!!errors.city}
+                      className={fieldClass}
+                    />
                   )}
                 </Field>
-                <Field label="State">
+                <Field label="State" error={errors.state}>
                   {(id) => (
-                    <select id={id} value={draft.state} onChange={(e) => update('state', e.target.value)} className={fieldClass}>
-                      {states.map((s) => (
-                        <option key={s}>{s}</option>
-                      ))}
-                    </select>
+                    <input
+                      id={id}
+                      autoComplete="address-level1"
+                      value={draft.state}
+                      onChange={(event) => update('state', event.target.value)}
+                      aria-invalid={!!errors.state}
+                      className={fieldClass}
+                    />
                   )}
                 </Field>
+                <p className="text-xs text-muted-foreground sm:col-span-2">
+                  Enter a delivery address in Nigeria. Your location is not being checked against Google Places.
+                </p>
                 <Field label="Landmark (optional)" className="sm:col-span-2">
                   {(id) => (
                     <input id={id} placeholder="e.g. Opposite First Bank" value={draft.landmark} onChange={(e) => update('landmark', e.target.value)} className={fieldClass} />
@@ -166,8 +201,8 @@ export function AddressView() {
                   </div>
                 </fieldset>
                 <div className="flex gap-3 sm:col-span-2">
-                  <button type="submit" className="h-11 rounded-full bg-foreground px-6 text-sm font-medium text-background hover:opacity-90">
-                    Save address
+                  <button type="submit" disabled={savingAddress} className="h-11 rounded-full bg-foreground px-6 text-sm font-medium text-background hover:opacity-90 disabled:opacity-60">
+                    {savingAddress ? 'Saving…' : 'Save address'}
                   </button>
                   {addresses.length > 0 && (
                     <button type="button" onClick={() => setAdding(false)} className="h-11 rounded-full px-5 text-sm font-medium hover:bg-muted">
@@ -205,7 +240,9 @@ export function AddressView() {
                       <span className="block font-medium">{opt.label}</span>
                       <span className="text-sm text-muted-foreground">{opt.eta}</span>
                     </span>
-                    <span className="text-sm font-medium tabular-nums">{formatPrice(opt.fee)}</span>
+                    <span className="text-sm font-medium tabular-nums">
+                      {active && selectedAddressId && quoteReady ? (deliveryFee === 0 ? 'Free' : formatPrice(deliveryFee)) : 'Location-based'}
+                    </span>
                   </button>
                 )
               })}

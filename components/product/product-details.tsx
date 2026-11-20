@@ -1,11 +1,31 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import { BadgeCheck } from 'lucide-react'
-import { reviewsSample, type Product } from '@/lib/data'
+import type { Product } from '@/lib/data'
 import { Rating } from '@/components/rating'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-
-const distribution = [72, 18, 6, 3, 1]
+import { listProductReviews } from '@/lib/api'
 
 export function ProductDetails({ product }: { product: Product }) {
+  const [reviews, setReviews] = useState<Awaited<ReturnType<typeof listProductReviews>>['items']>([])
+  const [reviewsError, setReviewsError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    void listProductReviews(product.id)
+      .then((response) => {
+        if (active) {
+          setReviews(response.items)
+          setReviewsError('')
+        }
+      })
+      .catch((error) => {
+        if (active) setReviewsError(error instanceof Error ? error.message : 'Reviews could not be loaded.')
+      })
+    return () => { active = false }
+  }, [product.id])
+
   return (
     <Tabs defaultValue="specs" className="gap-6">
       <TabsList>
@@ -30,39 +50,28 @@ export function ProductDetails({ product }: { product: Product }) {
             <p className="font-display text-5xl font-semibold">{product.rating.toFixed(1)}</p>
             <Rating value={product.rating} size="md" className="mt-2" />
             <p className="mt-1 text-sm text-muted-foreground">{`Based on ${product.reviews.toLocaleString()} reviews`}</p>
-            <ul className="mt-6 flex flex-col gap-2">
-              {distribution.map((pct, i) => (
-                <li key={i} className="flex items-center gap-3 text-xs">
-                  <span className="w-3 text-muted-foreground">{5 - i}</span>
-                  <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-                    <span className="block h-full rounded-full bg-amber-400" style={{ width: `${pct}%` }} />
-                  </span>
-                  <span className="w-8 text-right text-muted-foreground">{`${pct}%`}</span>
-                </li>
-              ))}
-            </ul>
           </div>
+          {reviewsError ? (
+            <p role="alert" className="text-sm text-destructive">{reviewsError}</p>
+          ) : reviews.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No verified reviews yet.</p>
+          ) : (
           <ul className="flex flex-col divide-y">
-            {reviewsSample.map((r) => (
+            {reviews.map((r) => (
               <li key={r.id} className="py-5 first:pt-0">
                 <div className="flex items-center justify-between gap-3">
                   <Rating value={r.rating} />
-                  <span className="text-xs text-muted-foreground">{r.date}</span>
+                  <span className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</span>
                 </div>
-                <p className="mt-2 font-medium">{r.title}</p>
-                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{r.body}</p>
+                {r.body && <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{r.body}</p>}
                 <p className="mt-3 flex items-center gap-1.5 text-xs">
-                  <span className="font-medium">{r.name}</span>
-                  {r.verified && (
-                    <span className="flex items-center gap-1 text-primary">
-                      <BadgeCheck className="size-3.5" />
-                      Verified purchase
-                    </span>
-                  )}
+                  <span className="font-medium">{r.reviewer}</span>
+                  <span className="flex items-center gap-1 text-primary"><BadgeCheck className="size-3.5" />Verified purchase</span>
                 </p>
               </li>
             ))}
           </ul>
+          )}
         </div>
       </TabsContent>
     </Tabs>

@@ -32,6 +32,7 @@ export function GiftListDialog({
   const [ownerRegion, setOwnerRegion] = useState(list?.ownerRegion ?? (user?.region ?? ''))
   const [selected, setSelected] = useState<string[]>(list?.productIds ?? [...wishlist])
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const saved = products.filter((p) => wishlist.has(p.id))
   const pool = [...saved, ...products.filter((p) => !wishlist.has(p.id))].slice(0, 12)
@@ -40,15 +41,22 @@ export function GiftListDialog({
     setSelected((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]))
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (name.trim().length < 3) return setError('Give your list a name (at least 3 characters).')
     if (!ownerName.trim()) return setError('Add the name gifts should be delivered to.')
     if (selected.length === 0) return setError('Pick at least one item for your list.')
     const input = { name: name.trim(), occasion, eventDate, note: note.trim(), ownerName: ownerName.trim(), ownerRegion: ownerRegion.trim(), productIds: selected }
-    if (list) updateList(list.id, input)
-    else createList(input)
-    onOpenChange(false)
+    setSaving(true)
+    try {
+      if (list) await updateList(list.id, input)
+      else await createList(input)
+      onOpenChange(false)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The wishlist could not be saved.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -133,8 +141,8 @@ export function GiftListDialog({
             <button type="button" onClick={() => onOpenChange(false)} className="h-11 rounded-xl border px-5 text-sm font-medium hover:bg-muted">
               Cancel
             </button>
-            <button type="submit" className="h-11 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground hover:opacity-90">
-              {list ? 'Save changes' : 'Create list'}
+            <button type="submit" disabled={saving} className="h-11 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60">
+              {saving ? 'Saving…' : list ? 'Save changes' : 'Create list'}
             </button>
           </div>
         </form>

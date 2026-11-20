@@ -2,41 +2,70 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
-import { CalendarDays, Check, CreditCard, Gift, Landmark, MapPin, ShieldCheck, Smartphone } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { CalendarDays, Check, Gift, MapPin, ShieldCheck } from 'lucide-react'
 import { formatPrice } from '@/lib/data'
 import { useCatalogProducts } from '@/components/catalog-provider'
 import { useAuth } from '@/components/auth-provider'
-import { decodeList, occasions, useWishlists } from '@/components/wishlist-provider'
+import { occasions, type SharedPayload } from '@/components/wishlist-provider'
 import { fieldClass } from '@/components/checkout/checkout-ui'
 import { cn } from '@/lib/utils'
-
-const methods = [
-  { id: 'card', label: 'Card', icon: CreditCard },
-  { id: 'transfer', label: 'Bank transfer', icon: Landmark },
-  { id: 'ussd', label: 'USSD', icon: Smartphone },
-] as const
+import { createGiftPayment, getSharedWishlist } from '@/lib/api'
+import { toast } from 'sonner'
 
 export function SharedListView({ token }: { token: string }) {
-  const list = useMemo(() => decodeList(token), [token])
   const { user } = useAuth()
   const { products, loaded, error: catalogError } = useCatalogProducts()
-  const { giftsFor, recordGifts } = useWishlists()
+  const [shared, setShared] = useState<Awaited<ReturnType<typeof getSharedWishlist>> | null>(null)
+  const [loadingList, setLoadingList] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [selected, setSelected] = useState<string[]>([])
   const [giverName, setGiverName] = useState(user ? `${user.firstName} ${user.lastName}` : '')
+  const [giverEmail, setGiverEmail] = useState(user?.email ?? '')
   const [anonymous, setAnonymous] = useState(false)
   const [message, setMessage] = useState('')
-  const [method, setMethod] = useState<(typeof methods)[number]['id']>('card')
   const [paying, setPaying] = useState(false)
   const [error, setError] = useState('')
-  const [done, setDone] = useState<{ reference: string; total: number; count: number } | null>(null)
+  const list: SharedPayload | null = shared ? {
+    id: shared.id,
+    name: shared.name,
+    note: shared.note,
+    occasion: (occasions.find((item) => item.value === shared.occasion)?.value ?? 'just-because'),
+    eventDate: shared.eventDate?.slice(0, 10) ?? '',
+    productIds: shared.items.map((item) => item.product.id),
+    ownerName: shared.owner.firstName,
+    ownerRegion: shared.owner.region ?? '',
+  } : null
 
-  if (!list) {
+  useEffect(() => {
+    let active = true
+    setLoadingList(true)
+    void getSharedWishlist(token)
+      .then((result) => {
+        if (active) {
+          setShared(result)
+          setLoadError('')
+        }
+      })
+      .catch((cause) => {
+        if (active) setLoadError(cause instanceof Error ? cause.message : 'This wishlist link is not valid.')
+      })
+      .finally(() => {
+        if (active) setLoadingList(false)
+      })
+    return () => { active = false }
+  }, [token])
+
+  if (loadingList) {
+    return <p role="status" className="mx-auto max-w-2xl px-4 py-20 text-center text-sm text-muted-foreground">Loading wishlist…</p>
+  }
+
+  if (!list || !shared) {
     return (
       <div className="mx-auto flex max-w-md flex-col items-center gap-3 px-4 py-24 text-center">
         <Gift className="size-8 text-muted-foreground" aria-hidden="true" />
         <h1 className="font-display text-2xl font-semibold">This wishlist link is not valid</h1>
-        <p className="text-muted-foreground">Ask the owner to send you a fresh link.</p>
+        <p className="text-muted-foreground">{loadError || 'Ask the owner to send you a fresh link.'}</p>
         <Link href="/wishlist" className="mt-2 flex h-11 items-center rounded-xl bg-foreground px-5 text-sm font-medium text-background">Go to wishlists</Link>
       </div>
     )
@@ -50,8 +79,8 @@ export function SharedListView({ token }: { token: string }) {
     )
   }
 
-  const items = list.productIds.flatMap((id) => products.find((p) => p.id === id) ?? [])
-  const gifted = new Set(giftsFor(list.id).map((g) => g.productId))
+  const items = shared.items.flatMap((item) => products.find((p) => p.id === item.product.id) ?? [])
+  const gifted = new Set(shared.giftedProductIds)
   const chosen = items.filter((p) => selected.includes(p.id))
   const subtotal = chosen.reduce((s, p) => s + p.price, 0)
   const serviceFee = Math.round(subtotal * 0.015)
@@ -68,39 +97,27 @@ export function SharedListView({ token }: { token: string }) {
     if (!list) return
     if (chosen.length === 0) return setError('Choose at least one item to gift.')
     if (!anonymous && giverName.trim().length < 2) return setError(`Add your name so ${firstName} knows who to thank.`)
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(giverEmail.trim())) return setError('Enter a valid email address for your payment receipt.')
     setError('')
     setPaying(true)
-    await new Promise((r) => setTimeout(r, 1400))
-    const reference = `GFT-${Math.floor(100000 + Math.random() * 899999)}`
-    recordGifts(list, {
-      giverName: giverName.trim() || 'A friend',
-      anonymous,
-      message: message.trim(),
-      reference,
-      items: chosen.map((p) => ({ productId: p.id, amount: p.price })),
-    })
-    setPaying(false)
-    setDone({ reference, total, count: chosen.length })
-    setSelected([])
-  }
-
-  if (done) {
-    return (
-      <div className="mx-auto flex max-w-lg flex-col items-center gap-4 px-4 py-20 text-center">
-        <span className="flex size-16 items-center justify-center rounded-full bg-primary text-primary-foreground">
-          <Check className="size-8" aria-hidden="true" />
-        </span>
-        <h1 className="font-display text-3xl font-semibold">Gift sent to {firstName}!</h1>
-        <p className="text-muted-foreground">
-          {`You paid ${formatPrice(done.total)} for ${done.count} item${done.count > 1 ? 's' : ''}. ${firstName} has been notified and the seller will deliver to their address in ${list.ownerRegion || 'their city'}.`}
-        </p>
-        <p className="rounded-xl bg-muted px-4 py-2 font-mono text-sm">{`Reference: ${done.reference}`}</p>
-        <div className="flex gap-3">
-          <button type="button" onClick={() => setDone(null)} className="h-11 rounded-xl border px-5 text-sm font-medium hover:bg-muted">Gift another item</button>
-          <Link href="/" className="flex h-11 items-center rounded-xl bg-foreground px-5 text-sm font-medium text-background">Keep shopping</Link>
-        </div>
-      </div>
-    )
+    try {
+      const result = await createGiftPayment(token, {
+        email: giverEmail.trim(),
+        giverName: giverName.trim() || undefined,
+        anonymous,
+        message: message.trim() || undefined,
+        items: chosen.map((product) => ({ productId: product.id, quantity: 1 })),
+      })
+      if (!result.payment.authorizationUrl.startsWith('https://')) {
+        throw new Error('Paystack did not return a secure payment link.')
+      }
+      window.location.assign(result.payment.authorizationUrl)
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'The gift payment could not be started.'
+      setError(message)
+      toast.error(message)
+      setPaying(false)
+    }
   }
 
   return (
@@ -170,6 +187,10 @@ export function SharedListView({ token }: { token: string }) {
             <span className="text-sm font-medium">Your name</span>
             <input value={giverName} onChange={(e) => setGiverName(e.target.value)} disabled={anonymous} placeholder="So they know who to thank" className={fieldClass} />
           </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium">Email for your payment receipt</span>
+            <input type="email" autoComplete="email" required value={giverEmail} onChange={(e) => setGiverEmail(e.target.value)} className={fieldClass} />
+          </label>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={anonymous} onChange={(e) => setAnonymous(e.target.checked)} className="size-4 accent-primary" />
             Gift anonymously
@@ -185,18 +206,6 @@ export function SharedListView({ token }: { token: string }) {
               className="w-full rounded-xl border bg-transparent px-4 py-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
             />
           </label>
-          <fieldset>
-            <legend className="text-sm font-medium">Pay with</legend>
-            <div className="mt-2 grid grid-cols-3 gap-2">
-              {methods.map(({ id, label, icon: Icon }) => (
-                <label key={id} className={cn('flex cursor-pointer flex-col items-center gap-1 rounded-xl border p-3 text-xs font-medium', method === id && 'border-primary bg-primary/5')}>
-                  <input type="radio" name="method" value={id} checked={method === id} onChange={() => setMethod(id)} className="sr-only" />
-                  <Icon className="size-5" aria-hidden="true" />
-                  {label}
-                </label>
-              ))}
-            </div>
-          </fieldset>
           <dl className="flex flex-col gap-2 border-t pt-4 text-sm">
             <div className="flex justify-between"><dt className="text-muted-foreground">{`Items (${chosen.length})`}</dt><dd className="tabular-nums">{formatPrice(subtotal)}</dd></div>
             <div className="flex justify-between"><dt className="text-muted-foreground">Delivery to {firstName}</dt><dd className="text-primary">Free</dd></div>
@@ -204,9 +213,9 @@ export function SharedListView({ token }: { token: string }) {
             <div className="mt-1 flex items-baseline justify-between border-t pt-3"><dt className="font-medium">Total</dt><dd className="font-display text-2xl font-semibold tabular-nums">{formatPrice(total)}</dd></div>
           </dl>
           {error && <p role="alert" className="text-sm text-deal">{error}</p>}
-          <button type="submit" disabled={paying} className="flex h-12 items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60">
+          <button type="submit" disabled={paying || chosen.length === 0} className="flex h-12 items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60">
             <Gift className="size-4" aria-hidden="true" />
-            {paying ? 'Processing payment…' : `Pay ${formatPrice(total)} for ${firstName}`}
+            {paying ? 'Opening Paystack…' : `Continue to Paystack · ${formatPrice(total)}`}
           </button>
           <p className="flex items-start gap-2 text-xs text-muted-foreground">
             <ShieldCheck className="size-4 shrink-0 text-primary" aria-hidden="true" />

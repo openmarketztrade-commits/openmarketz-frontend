@@ -11,6 +11,8 @@ import { useAuth } from '@/components/auth-provider'
 import { useOpenMarket } from '@/components/open-market/open-market-provider'
 import { Field, FileDrop, Select, SubmitButton, inputClass } from '@/components/forms'
 import { cn } from '@/lib/utils'
+import { uploadMedia } from '@/lib/api'
+import { toast } from 'sonner'
 
 export function PostRequestForm() {
   const router = useRouter()
@@ -26,7 +28,7 @@ export function PostRequestForm() {
   const [state, setState] = useState(user?.region ?? '')
   const [city, setCity] = useState('')
   const [neededBy, setNeededBy] = useState('')
-  const [photo, setPhoto] = useState<{ name: string; url: string } | null>(null)
+  const [photo, setPhoto] = useState<{ name: string; url: string; file: File } | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const states = countries[0].regions
@@ -48,12 +50,18 @@ export function PostRequestForm() {
     setErrors(err)
     if (Object.keys(err).length) return
     setLoading(true)
-    await new Promise((r) => setTimeout(r, 700))
-    const req = postRequest({
-      title: title.trim(), description: description.trim(), category, condition, budgetMin: min, budgetMax: max, quantity: qty,
-      location: `${city.trim()}, ${state}`, neededBy, image: photo?.url,
-    })
-    router.push(`/open-market/requests/${req.id}?posted=1`)
+    try {
+      const imageMediaId = photo ? (await uploadMedia(photo.file, 'MARKET_REQUEST')).id : undefined
+      const req = await postRequest({
+        title: title.trim(), description: description.trim(), category, condition, budgetMin: min, budgetMax: max, quantity: qty,
+        location: `${city.trim()}, ${state}`, neededBy, image: undefined, imageMediaId,
+      })
+      router.push(`/open-market/requests/${req.id}?posted=1`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Your request could not be posted.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -113,7 +121,7 @@ export function PostRequestForm() {
             </Field>
           </div>
           <Field label="Reference photo" optional>
-            <FileDrop label="Add a photo" accept="image/*" hint="Helps sellers match exactly what you want" file={photo} previewUrl={photo?.url} onFile={(f) => setPhoto({ name: f.name, url: URL.createObjectURL(f) })} onClear={() => setPhoto(null)} />
+            <FileDrop label="Add a photo" accept="image/*" hint="Helps sellers match exactly what you want" file={photo} previewUrl={photo?.url} onFile={(file) => setPhoto({ name: file.name, url: URL.createObjectURL(file), file })} onClear={() => setPhoto(null)} />
           </Field>
           <SubmitButton loading={loading} className="sm:w-auto sm:self-start sm:px-10">Post request</SubmitButton>
         </form>
@@ -125,7 +133,7 @@ export function PostRequestForm() {
           <li>Be specific about brand, model or size.</li>
           <li>A realistic budget gets more replies.</li>
           <li>Add a photo of what you have in mind.</li>
-          <li>Never pay outside OpenMarketz — escrow protects you.</li>
+          <li>Open Market payment checkout is not available yet. Do not send payment for an accepted offer.</li>
         </ul>
       </aside>
     </div>

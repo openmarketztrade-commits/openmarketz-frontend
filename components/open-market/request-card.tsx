@@ -4,9 +4,10 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { Clock, MapPin, MessageSquareText } from 'lucide-react'
 import { formatPrice, getCategory } from '@/lib/data'
-import { ME, conditionLabels, timeAgo, type MarketRequest } from '@/lib/open-market'
+import { conditionLabels, timeAgo, type MarketRequest } from '@/lib/open-market'
 import { useOpenMarket } from '@/components/open-market/open-market-provider'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/components/auth-provider'
 
 export function RequestStatusBadge({ status }: { status: MarketRequest['status'] }) {
   return (
@@ -25,7 +26,8 @@ export function RequestStatusBadge({ status }: { status: MarketRequest['status']
 
 export function RequestCard({ request }: { request: MarketRequest }) {
   const { responsesFor } = useOpenMarket()
-  const count = responsesFor(request.id).length
+  const { user } = useAuth()
+  const count = Math.max(request.responseCount ?? 0, responsesFor(request.id).length)
   return (
     <Link
       href={`/open-market/requests/${request.id}`}
@@ -37,7 +39,7 @@ export function RequestCard({ request }: { request: MarketRequest }) {
         )}
         <div className="absolute left-3 top-3 flex gap-2">
           <RequestStatusBadge status={request.status} />
-          {request.buyerId === ME && <span className="rounded-full bg-background px-2.5 py-0.5 text-xs font-medium">Your request</span>}
+          {request.buyerId === user?.id && <span className="rounded-full bg-background px-2.5 py-0.5 text-xs font-medium">Your request</span>}
         </div>
       </div>
       <div className="flex flex-1 flex-col gap-2 p-4">

@@ -20,11 +20,11 @@ export function SupportView() {
       <header className="flex max-w-2xl flex-col gap-3">
         <p className="text-sm font-medium text-primary">Help & support</p>
         <h1 className="font-display text-4xl font-semibold tracking-tight text-balance md:text-5xl">How can we help you today?</h1>
-        <p className="text-pretty text-muted-foreground">Chat with our team live, message us on WhatsApp or send us a complaint by email. Real people, every day of the week.</p>
+        <p className="text-pretty text-muted-foreground">Send your team a support message, contact us on WhatsApp or create a ticket. Your signed-in support conversations are saved in your ticket history.</p>
       </header>
 
       <ul className="grid gap-4 sm:grid-cols-3">
-        <ChannelCard icon={<MessageSquareText className="size-5" />} title="Live chat" body="Average reply in 2 minutes" href="#chat" cta="Start chatting" />
+        <ChannelCard icon={<MessageSquareText className="size-5" />} title="Support messages" body="Replies are saved to your support ticket" href="#chat" cta="Open support chat" />
         <ChannelCard icon={<WhatsAppIcon className="size-5" />} title="WhatsApp" body={WHATSAPP_DISPLAY} href={WHATSAPP_URL} cta="Open WhatsApp" external />
         <ChannelCard icon={<Mail className="size-5" />} title="Email" body={SUPPORT_EMAIL} href="#complaint" cta="Send a complaint" />
       </ul>
@@ -35,7 +35,7 @@ export function SupportView() {
         </div>
         <section id="complaint" aria-labelledby="complaint-title" className="scroll-mt-28 rounded-3xl border bg-card p-6">
           <h2 id="complaint-title" className="font-display text-2xl font-semibold">Send us a complaint</h2>
-          <p className="mb-5 mt-1 text-sm text-muted-foreground">We will open a ticket and reply to your email within 24 hours.</p>
+          <p className="mb-5 mt-1 text-sm text-muted-foreground">We will open a support ticket. Sign in to follow replies in your ticket history.</p>
           <ComplaintForm />
         </section>
       </div>
