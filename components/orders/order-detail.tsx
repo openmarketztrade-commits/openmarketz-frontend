@@ -18,6 +18,7 @@ export function OrderDetail({ id }: { id: string }) {
   const [confirming, setConfirming] = useState(false)
   const { products } = useCatalogProducts()
   const order = orders.find((o) => o.id === id)
+  const shipments = order?.shipments?.length ? order.shipments : order?.shipment ? [order.shipment] : []
 
   if (!order) {
     return (
@@ -52,24 +53,19 @@ export function OrderDetail({ id }: { id: string }) {
                 {`${deliveryOptions[order.delivery].label} · ${deliveryOptions[order.delivery].eta}`}
               </span>
             </div>
-            {order.shipment && (
-              <p className="mt-3 text-sm text-muted-foreground">
-                {[
-                  order.shipment.carrier,
-                  order.shipment.waybill ? `Waybill ${order.shipment.waybill}` : undefined,
-                ].filter(Boolean).join(' · ') || `Shipment status: ${order.shipment.status.toLowerCase().replaceAll('_', ' ')}`}
-                {order.shipment.trackingUrl && (
-                  <>
-                    {' · '}
-                    <a href={order.shipment.trackingUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-primary hover:underline">Track with carrier</a>
-                  </>
-                )}
-              </p>
-            )}
+            {shipments.length > 0 && <ul className="mt-3 flex flex-col gap-3">
+              {shipments.map((shipment, index) => (
+                <li key={shipment.id ?? shipment.sellerId ?? index} className="rounded-xl bg-muted/50 p-3 text-sm">
+                  <p className="font-medium">{shipment.sellerName ? `${shipment.sellerName} · ` : ''}{shipment.carrier ?? 'Delivery'}{` · ${shipment.status.toLowerCase().replaceAll('_', ' ')}`}</p>
+                  {shipment.waybill && <p className="mt-1 text-muted-foreground">{`Waybill ${shipment.waybill}`}</p>}
+                  {shipment.trackingUrl && <a href={shipment.trackingUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block font-medium text-primary hover:underline">Track with carrier</a>}
+                </li>
+              ))}
+            </ul>}
             <div className="mt-6">
               <OrderTimeline status={order.status} placedAt={order.placedAt} />
             </div>
-            {order.shipment?.status === 'DELIVERED' && !order.buyerConfirmedDeliveredAt && (
+            {shipments.length > 0 && shipments.every((shipment) => shipment.status === 'DELIVERED') && !order.buyerConfirmedDeliveredAt && (
               <button
                 type="button"
                 disabled={confirming}

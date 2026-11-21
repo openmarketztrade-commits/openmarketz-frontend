@@ -6,11 +6,11 @@ import { useState } from 'react'
 import { Box, Check, MapPin, Phone, Truck } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatPrice } from '@/lib/data'
-import { dropOffHubs, fulfilmentSteps, timeUntil, type DispatchMethod, type SalesOrder } from '@/lib/seller'
+import { getSellerShippingRates, type ShippingRate } from '@/lib/api'
+import { fulfilmentSteps, timeUntil, type SalesOrder } from '@/lib/seller'
 import { timeAgo } from '@/components/notifications-provider'
 import { useSeller } from '@/components/seller/seller-provider'
 import { PageHeader, StatusPill } from '@/components/seller/seller-shell'
-import { Select } from '@/components/forms'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
@@ -117,8 +117,8 @@ function OrderCard({ order: o, highlighted }: { order: SalesOrder; highlighted: 
       {o.dispatch && (
         <p className="mt-4 flex items-center gap-2 rounded-xl border border-dashed p-3 text-sm">
           <Truck className="size-4 text-primary" aria-hidden="true" />
-          {`${o.dispatch.method === 'pickup' ? 'Rider pickup' : 'Drop-off'} · ${o.dispatch.hub} · Waybill `}
-          <span className="font-mono font-semibold">{o.dispatch.waybill}</span>
+          <span>{`${o.dispatch.hub} · Tracking `}</span>
+          {o.dispatch.trackingUrl ? <a href={o.dispatch.trackingUrl} target="_blank" rel="noreferrer" className="font-mono font-semibold text-primary underline">{o.dispatch.waybill}</a> : <span className="font-mono font-semibold">{o.dispatch.waybill}</span>}
         </p>
       )}
 
@@ -138,71 +138,98 @@ function OrderCard({ order: o, highlighted }: { order: SalesOrder; highlighted: 
               Mark as packed
             </button>
           )}
-          <button type="button" onClick={() => setDispatchOpen(true)} className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground">
+          {o.source === 'api' && <button type="button" onClick={() => setDispatchOpen(true)} className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground">
             <Truck className="size-4" aria-hidden="true" />
-            Send to delivery
-          </button>
+            Get Shipbubble rates
+          </button>}
+          {o.source !== 'api' && <p className="self-center text-xs text-muted-foreground">Carrier booking is available for paid marketplace orders.</p>}
         </div>
       )}
 
-      <DispatchDialog open={dispatchOpen} onOpenChange={setDispatchOpen} order={o} onConfirm={async (method, hub) => {
-        try {
-          await advanceOrder(o.id, 'handed_over', { method, hub })
-          setDispatchOpen(false)
-          toast.success(method === 'pickup' ? 'Pickup request recorded.' : 'Drop-off at the selected hub recorded.')
-        } catch (error) {
-          toast.error(error instanceof Error ? error.message : 'Delivery hand-off could not be recorded.')
-        }
-      }} />
+      <ShipbubbleDialog open={dispatchOpen} onOpenChange={setDispatchOpen} order={o} />
     </li>
   )
 }
 
-function DispatchDialog({ open, onOpenChange, order, onConfirm }: { open: boolean; onOpenChange: (v: boolean) => void; order: SalesOrder; onConfirm: (m: DispatchMethod, hub: string) => Promise<void> | void }) {
-  const [method, setMethod] = useState<DispatchMethod>('dropoff')
-  const [hub, setHub] = useState(dropOffHubs[0])
+function ShipbubbleDialog({ open, onOpenChange, order }: { open: boolean; onOpenChange: (v: boolean) => void; order: SalesOrder }) {
+  const { bookShipping } = useSeller()
+  const [weight, setWeight] = useState('1')
+  const [length, setLength] = useState('20')
+  const [width, setWidth] = useState('15')
+  const [height, setHeight] = useState('10')
+  const [requestToken, setRequestToken] = useState<string | null>(null)
+  const [rates, setRates] = useState<ShippingRate[]>([])
+  const [selected, setSelected] = useState<string>('')
+  const [loadingRates, setLoadingRates] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const options: { id: DispatchMethod; title: string; body: string }[] = [
-    { id: 'dropoff', title: 'Drop off at a hub', body: 'Free · Bring the package to the nearest OpenMarketz hub.' },
-    { id: 'pickup', title: 'Request rider pickup', body: '₦1,000 · A rider collects from your store within 4 hours.' },
-  ]
+  const [error, setError] = useState<string | null>(null)
+  const selectedRate = rates.find((rate) => `${rate.courierId}:${rate.serviceCode}` === selected)
+
+  async function loadRates() {
+    setLoadingRates(true)
+    setError(null)
+    try {
+      const result = await getSellerShippingRates(order.id, {
+        packageWeightKg: Number(weight), lengthCm: Number(length), widthCm: Number(width), heightCm: Number(height),
+      })
+      setRequestToken(result.requestToken)
+      setRates(result.couriers)
+      setSelected(result.couriers[0] ? `${result.couriers[0].courierId}:${result.couriers[0].serviceCode}` : '')
+      if (!result.couriers.length) setError('Shipbubble returned no delivery options for this package.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Shipping rates could not be loaded.')
+    } finally {
+      setLoadingRates(false)
+    }
+  }
+
+  async function bookSelected() {
+    if (!selectedRate || !requestToken) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      await bookShipping(order.id, { requestToken, courierId: selectedRate.courierId, serviceCode: selectedRate.serviceCode })
+      onOpenChange(false)
+      toast.success('Shipbubble delivery booked. Tracking details are now attached to this order.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The shipment could not be booked.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{`Send ${order.id} to delivery`}</DialogTitle>
-          <DialogDescription>Choose the hand-off method and hub. The selection will be recorded on this paid order.</DialogDescription>
+          <DialogTitle>{`Ship ${order.id} with Shipbubble`}</DialogTitle>
+          <DialogDescription>Enter the packed parcel dimensions to get live courier rates for the buyer’s delivery address.</DialogDescription>
         </DialogHeader>
-        <fieldset className="flex flex-col gap-2">
-          <legend className="sr-only">Hand-over method</legend>
-          {options.map((opt) => (
-            <label key={opt.id} className={cn('flex cursor-pointer items-start gap-3 rounded-2xl border p-3', method === opt.id && 'border-primary bg-primary/5')}>
-              <input type="radio" name="method" checked={method === opt.id} onChange={() => setMethod(opt.id)} className="mt-1 accent-[var(--primary)]" />
-              <span>
-                <span className="block text-sm font-medium">{opt.title}</span>
-                <span className="block text-xs text-muted-foreground">{opt.body}</span>
-              </span>
-            </label>
-          ))}
-        </fieldset>
-        <label className="flex flex-col gap-1.5 text-sm font-medium">
-          {method === 'pickup' ? 'Delivery hub that will handle it' : 'Drop-off hub'}
-          <Select value={hub} onChange={(e) => setHub(e.target.value)}>
-            {dropOffHubs.map((h) => <option key={h}>{h}</option>)}
-          </Select>
-        </label>
-        <button type="button" disabled={submitting} onClick={async () => {
-          setSubmitting(true)
-          try {
-            await onConfirm(method, hub)
-          } finally {
-            setSubmitting(false)
-          }
-        }} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground disabled:opacity-50">
-          <Check className="size-4" aria-hidden="true" />
-          {submitting ? 'Recording…' : 'Confirm hand-off'}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {([
+            ['Weight (kg)', weight, setWeight], ['Length (cm)', length, setLength], ['Width (cm)', width, setWidth], ['Height (cm)', height, setHeight],
+          ] as const).map(([label, value, setter]) => <label key={label} className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">{label}<input type="number" min="0.1" step="0.1" required value={value} onChange={(event) => { setter(event.target.value); setRequestToken(null); setRates([]) }} className="h-10 rounded-lg border bg-background px-3 text-sm text-foreground" /></label>)}
+        </div>
+        <button type="button" disabled={loadingRates || [weight, length, width, height].some((value) => !Number.isFinite(Number(value)) || Number(value) <= 0)} onClick={() => void loadRates()} className="flex h-10 items-center justify-center gap-2 rounded-xl border text-sm font-semibold disabled:opacity-50">
+          {loadingRates ? 'Loading rates…' : 'Get live rates'}
         </button>
+        {rates.length > 0 && <fieldset className="flex max-h-56 flex-col gap-2 overflow-y-auto">
+          <legend className="mb-2 text-sm font-semibold">Available courier services</legend>
+          {rates.map((rate) => {
+            const value = `${rate.courierId}:${rate.serviceCode}`
+            return <label key={value} className={cn('flex cursor-pointer items-center gap-3 rounded-xl border p-3', selected === value && 'border-primary bg-primary/5')}>
+              <input type="radio" name={`courier-${order.id}`} checked={selected === value} onChange={() => setSelected(value)} className="accent-[var(--primary)]" />
+              <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{rate.courierName} · {rate.serviceType}</span><span className="text-xs text-muted-foreground">{rate.deliveryEta} · {rate.trackingLevel} tracking</span></span>
+              <span className="text-sm font-semibold">{formatPrice(rate.total)}</span>
+            </label>
+          })}
+        </fieldset>}
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        {selectedRate && <button type="button" disabled={submitting} onClick={() => void bookSelected()} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground disabled:opacity-50">
+          <Check className="size-4" aria-hidden="true" />
+          {submitting ? 'Booking shipment…' : `Book ${selectedRate.courierName} · ${formatPrice(selectedRate.total)}`}
+        </button>
+        }
       </DialogContent>
     </Dialog>
   )

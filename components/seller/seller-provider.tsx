@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { getSeller, type Product } from '@/lib/data'
 import { useShop } from '@/components/shop-provider'
 import { useAuth } from '@/components/auth-provider'
-import { listSellerOrders, listSellerProducts, updateSellerOrderShipment } from '@/lib/api'
+import { bookSellerShipping, listSellerOrders, listSellerProducts, updateSellerOrderShipment } from '@/lib/api'
 import { mapCatalogProduct, useCatalogProducts } from '@/components/catalog-provider'
 import {
   STORE_ID, newWaybill,
@@ -41,6 +41,7 @@ type SellerValue = {
   updateStock: (id: string, stock: number) => void
   respondToBargain: (id: string, action: 'accept' | 'decline' | { counter: number }) => Promise<void>
   advanceOrder: (id: string, next: FulfilmentStatus, dispatch?: { method: DispatchMethod; hub: string }) => Promise<void>
+  bookShipping: (id: string, input: { requestToken: string; courierId: string; serviceCode: string }) => Promise<void>
   markAlertRead: (id: string) => void
   markAllAlertsRead: () => void
 }
@@ -142,6 +143,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
                 method: order.shipment.method === 'pickup' ? 'pickup' : 'dropoff',
                 hub: order.shipment.hub ?? 'OpenMarketz Delivery',
                 waybill: order.shipment.waybill ?? 'Pending',
+                trackingUrl: order.shipment.trackingUrl,
                 at: placedAt,
               } : undefined,
               payout: order.adminConfirmedDeliveredAt ? 'released' : 'escrow',
@@ -310,6 +312,26 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
     [shop.orders, pushAlert, apiOrders],
   )
 
+  const bookShipping = useCallback<SellerValue['bookShipping']>(async (id, input) => {
+    await bookSellerShipping(id, input)
+    const { items } = await listSellerOrders()
+    const refreshed = items.find((order) => order.id === id)
+    if (!refreshed?.shipment) throw new Error('The carrier booking completed, but the updated shipment could not be loaded. Refresh orders to check its status.')
+    const shipment = refreshed.shipment
+    const status: FulfilmentStatus = shipment.status === 'DELIVERED' ? 'delivered' : shipment.status === 'IN_TRANSIT' ? 'in_transit' : shipment.status === 'PACKED' ? 'packed' : 'handed_over'
+    setApiOrders((previous) => previous.map((order) => order.id === id ? {
+      ...order,
+      status,
+      dispatch: {
+        method: 'dropoff',
+        hub: shipment.carrier ?? 'Shipbubble',
+        waybill: shipment.waybill ?? 'Booking confirmed',
+        trackingUrl: shipment.trackingUrl,
+        at: Date.now(),
+      },
+    } : order))
+  }, [])
+
   const markAlertRead = useCallback((id: string) => {
     setReadIds((prev) => new Set(prev).add(id))
     setAlerts((prev) => prev.map((a) => (a.id === id ? { ...a, read: true } : a)))
@@ -325,9 +347,9 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(
     () => ({
       store, listings, bargains: allBargains, orders: allOrders, alerts: allAlerts, unreadAlerts, listingsLoaded, listingsError, productById,
-      addListing, setListingStatus, updateStock, respondToBargain, advanceOrder, markAlertRead, markAllAlertsRead,
+      addListing, setListingStatus, updateStock, respondToBargain, advanceOrder, bookShipping, markAlertRead, markAllAlertsRead,
     }),
-    [store, listings, allBargains, allOrders, allAlerts, unreadAlerts, listingsLoaded, listingsError, productById, addListing, setListingStatus, updateStock, respondToBargain, advanceOrder, markAlertRead, markAllAlertsRead],
+    [store, listings, allBargains, allOrders, allAlerts, unreadAlerts, listingsLoaded, listingsError, productById, addListing, setListingStatus, updateStock, respondToBargain, advanceOrder, bookShipping, markAlertRead, markAllAlertsRead],
   )
 
   return <SellerContext.Provider value={value}>{children}</SellerContext.Provider>

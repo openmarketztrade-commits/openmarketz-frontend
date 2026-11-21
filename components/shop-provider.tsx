@@ -126,7 +126,8 @@ export type Order = {
   address: Address
   delivery: DeliveryMethod
   payment: PaymentMethod
-  shipment?: { status: string; carrier?: string | null; waybill?: string | null; trackingUrl?: string | null } | null
+  shipment?: { id?: string; sellerId?: string; sellerName?: string; status: string; carrier?: string | null; waybill?: string | null; trackingUrl?: string | null } | null
+  shipments?: { id?: string; sellerId?: string; sellerName?: string; status: string; carrier?: string | null; waybill?: string | null; trackingUrl?: string | null }[]
   buyerConfirmedDeliveredAt?: string | null
   paidAt?: string | null
   subtotal: number
@@ -235,6 +236,7 @@ function mapOrder(order: ApiOrder): Order {
     delivery: order.deliveryMethod,
     payment: 'paystack',
     shipment: order.shipment,
+    shipments: order.shipments,
     buyerConfirmedDeliveredAt: order.buyerConfirmedDeliveredAt,
     paidAt: order.paidAt,
     subtotal: order.subtotal,

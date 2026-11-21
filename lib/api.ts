@@ -193,6 +193,34 @@ export type CatalogProductApi = {
   updatedAt?: string
 }
 
+export type PublicStoreApi = {
+  id: string
+  slug: string
+  name: string
+  tagline: string
+  about: string
+  location: string
+  verified: boolean
+  rating: number
+  reviewCount: number
+  logoUrl: string | null
+  bannerUrl: string | null
+  createdAt: string
+  productCount: number
+}
+
+export async function getPublicStore(slug: string) {
+  return apiRequest<PublicStoreApi>(`catalog/stores/${encodeURIComponent(slug)}`, { method: 'GET', cache: 'no-store' }, { authenticated: false })
+}
+
+export async function listPublicStoreProducts(slug: string, page = 1, limit = 24) {
+  return apiRequest<{ items: CatalogProductApi[]; total: number; page: number; limit: number; pages: number }>(
+    `catalog/stores/${encodeURIComponent(slug)}/products?page=${page}&limit=${limit}`,
+    { method: 'GET', cache: 'no-store' },
+    { authenticated: false },
+  )
+}
+
 export type ApiOffer = {
   id: string
   buyerId: string
@@ -348,7 +376,8 @@ export type ApiOrder = {
     seller: { id: string; name: string; slug: string }
   }[]
   payments: { id: string; reference: string; status: string; amount: number; authorizationUrl: string | null }[]
-  shipment: { status: string; method?: string | null; hub?: string | null; carrier?: string | null; waybill?: string | null; trackingUrl?: string | null } | null
+  shipment: { id?: string; sellerId?: string; status: string; method?: string | null; hub?: string | null; carrier?: string | null; waybill?: string | null; trackingUrl?: string | null } | null
+  shipments?: { id?: string; sellerId?: string; sellerName?: string; status: string; method?: string | null; hub?: string | null; carrier?: string | null; waybill?: string | null; trackingUrl?: string | null }[]
   buyerConfirmedDeliveredAt?: string | null
   adminConfirmedDeliveredAt?: string | null
   paidAt?: string | null
@@ -483,6 +512,33 @@ export async function updateSellerOrderShipment(id: string, input: {
   return apiRequest<{ id: string; status: string }>(`orders/${encodeURIComponent(id)}/shipment`, {
     method: 'PATCH',
     body: JSON.stringify(input),
+  })
+}
+
+export type ShippingRate = {
+  courierId: string
+  courierName: string
+  serviceCode: string
+  serviceType: string
+  total: number
+  deliveryEta: string
+  trackingLevel: string
+}
+
+export async function getSellerShippingRates(id: string, input: {
+  packageWeightKg: number
+  lengthCm: number
+  widthCm: number
+  heightCm: number
+}) {
+  return apiRequest<{ requestToken: string; couriers: ShippingRate[] }>(`orders/${encodeURIComponent(id)}/shipping/rates`, {
+    method: 'POST', body: JSON.stringify(input),
+  })
+}
+
+export async function bookSellerShipping(id: string, input: { requestToken: string; courierId: string; serviceCode: string }) {
+  return apiRequest<unknown>(`orders/${encodeURIComponent(id)}/shipping/book`, {
+    method: 'POST', body: JSON.stringify(input),
   })
 }
 

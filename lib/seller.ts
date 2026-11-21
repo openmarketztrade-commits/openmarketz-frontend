@@ -45,7 +45,7 @@ export type SalesOrder = {
   placedAt: number
   dispatchBy: number
   status: FulfilmentStatus
-  dispatch?: { method: DispatchMethod; hub: string; waybill: string; at: number }
+  dispatch?: { method: DispatchMethod; hub: string; waybill: string; trackingUrl?: string | null; at: number }
   payout: 'escrow' | 'released'
   source: 'shop' | 'api'
 }

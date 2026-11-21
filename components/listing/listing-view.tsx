@@ -37,7 +37,8 @@ export function ListingView({
   const [filters, setFilters] = useState<Filters>(emptyFilters)
   const [sort, setSort] = useState<Sort>('relevance')
   const { products: catalogProducts, loaded, error } = useCatalogProducts()
-  const sourceProducts = catalogProducts
+  const sourceProducts = sellerSlug ? initialProducts : catalogProducts
+  const productsLoaded = sellerSlug ? true : loaded
   const searchTerms = query?.trim().toLowerCase().split(/\s+/).filter(Boolean) ?? []
   const products = (categorySlug
     ? sourceProducts.filter((product) => product.category === categorySlug)
@@ -109,7 +110,7 @@ export function ListingView({
       <div className="min-w-0">
         <div className="mb-5 flex items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground" aria-live="polite">
-            {!loaded ? 'Loading products…' : error ? 'Products are unavailable.' : (
+            {!productsLoaded ? 'Loading products…' : error && !sellerSlug ? 'Products are unavailable.' : (
               <>
                 <span className="font-medium text-foreground">{results.length}</span>
                 {results.length === 1 ? ' product' : ' products'}
@@ -182,9 +183,9 @@ export function ListingView({
           )}
         </AnimatePresence>
 
-        {!loaded ? (
+        {!productsLoaded ? (
           <div role="status" className="rounded-3xl border border-dashed p-10 text-center text-sm text-muted-foreground">Loading products…</div>
-        ) : error ? (
+        ) : error && !sellerSlug ? (
           <div role="alert" className="rounded-3xl border border-dashed p-10 text-center text-sm text-muted-foreground">{`Products could not be loaded: ${error}`}</div>
         ) : results.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed py-20 text-center">
