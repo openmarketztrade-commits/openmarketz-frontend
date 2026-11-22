@@ -12,7 +12,7 @@ import { useShop } from '@/components/shop-provider'
 import { useAuth } from '@/components/auth-provider'
 import { SearchBar } from '@/components/search-bar'
 import { Logo } from '@/components/logo'
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
+import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 
 export function SiteHeader() {
@@ -79,17 +79,25 @@ export function SiteHeader() {
                 Shop by category
               </p>
               {categories.map((c) => (
-                <Link
+                <SheetClose
                   key={c.slug}
-                  href={`/category/${c.slug}`}
-                  className="rounded-lg px-3 py-2.5 text-sm hover:bg-muted"
+                  render={
+                    <Link
+                      href={`/category/${c.slug}`}
+                      className="rounded-lg px-3 py-2.5 text-sm hover:bg-muted"
+                    />
+                  }
                 >
                   {c.name}
-                </Link>
+                </SheetClose>
               ))}
-              <Link href="/products" className="mt-2 rounded-lg px-3 py-2.5 text-sm font-medium text-primary hover:bg-muted">
+              <SheetClose
+                render={
+                  <Link href="/products" className="mt-2 rounded-lg px-3 py-2.5 text-sm font-medium text-primary hover:bg-muted" />
+                }
+              >
                 Browse all products
-              </Link>
+              </SheetClose>
             </nav>
           </SheetContent>
         </Sheet>
