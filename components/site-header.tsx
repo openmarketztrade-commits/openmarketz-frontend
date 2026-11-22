@@ -108,16 +108,16 @@ export function SiteHeader() {
             <Package className="size-5" />
             <span className="hidden lg:inline">Orders</span>
           </Link>
-          <HeaderIcon href="/offers" label="My offers" count={offers.filter((o) => o.status === 'pending').length}>
+          <HeaderIcon className="hidden sm:flex" href="/offers" label="My offers" count={offers.filter((o) => o.status === 'pending').length}>
             <HandCoins className="size-5" />
           </HeaderIcon>
-          <HeaderIcon href="/messages" label="Messages" count={unread}>
+          <HeaderIcon className="hidden sm:flex" href="/messages" label="Messages" count={unread}>
             <MessageCircle className="size-5" />
           </HeaderIcon>
-          <HeaderIcon href="/notifications" label="Notifications" count={unreadNotifications}>
+          <HeaderIcon className="hidden sm:flex" href="/notifications" label="Notifications" count={unreadNotifications}>
             <Bell className="size-5" />
           </HeaderIcon>
-          <HeaderIcon href="/wishlist" label="Wishlist" count={wishlist.size}>
+          <HeaderIcon className="hidden sm:flex" href="/wishlist" label="Wishlist" count={wishlist.size}>
             <Heart className="size-5" />
           </HeaderIcon>
           <HeaderIcon href="/cart" label="Cart" count={cartCount}>
@@ -195,17 +195,19 @@ function HeaderIcon({
   label,
   count,
   children,
+  className,
 }: {
   href: string
   label: string
   count: number
   children: React.ReactNode
+  className?: string
 }) {
   return (
     <Link
       href={href}
       aria-label={`${label}${count ? `, ${count} items` : ''}`}
-      className="relative flex size-10 items-center justify-center rounded-full hover:bg-muted"
+      className={cn('relative flex size-10 items-center justify-center rounded-full hover:bg-muted', className)}
     >
       {children}
       <AnimatePresence>
