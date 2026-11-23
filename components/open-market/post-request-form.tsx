@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { Lightbulb } from 'lucide-react'
-import { categories, formatPrice } from '@/lib/data'
+import { formatPrice } from '@/lib/data'
 import { countries } from '@/lib/geo'
 import { conditionLabels, type RequestCondition } from '@/lib/open-market'
 import { useAuth } from '@/components/auth-provider'
@@ -13,11 +13,13 @@ import { Field, FileDrop, Select, SubmitButton, inputClass } from '@/components/
 import { cn } from '@/lib/utils'
 import { uploadMedia } from '@/lib/api'
 import { toast } from 'sonner'
+import { useCatalogProducts } from '@/components/catalog-provider'
 
 export function PostRequestForm() {
   const router = useRouter()
   const { user } = useAuth()
   const { postRequest } = useOpenMarket()
+  const { categories, categoriesLoaded } = useCatalogProducts()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState('')
@@ -80,8 +82,8 @@ export function PostRequestForm() {
           </Field>
           <div className="grid gap-5 sm:grid-cols-2">
             <Field label="Category" error={errors.category} htmlFor="c">
-              <Select id="c" value={category} onChange={(e) => setCategory(e.target.value)} aria-invalid={!!errors.category || undefined}>
-                <option value="">Select category</option>
+              <Select id="c" value={category} onChange={(e) => setCategory(e.target.value)} disabled={!categoriesLoaded || categories.length === 0} aria-invalid={!!errors.category || undefined}>
+                <option value="">{categoriesLoaded ? 'Select category' : 'Loading categories…'}</option>
                 {categories.map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
               </Select>
             </Field>

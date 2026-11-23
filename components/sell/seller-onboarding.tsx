@@ -7,7 +7,8 @@ import { BadgeCheck, Building2, Check, IdCard, Landmark, Store } from 'lucide-re
 import { countries, getCountry, maxBirthDate, type CountryCode } from '@/lib/geo'
 import { useAuth } from '@/components/auth-provider'
 import { Field, FileDrop, FormAlert, Select, SubmitButton, inputClass } from '@/components/forms'
-import { errorMessage, listPublicCategories, uploadMedia, type ApiCategory } from '@/lib/api'
+import { errorMessage, uploadMedia } from '@/lib/api'
+import { useCatalogProducts } from '@/components/catalog-provider'
 import { cn } from '@/lib/utils'
 
 const steps = [
@@ -30,6 +31,7 @@ export function SellerOnboarding() {
     authReady,
     submitSellerApplication,
   } = useAuth()
+  const { categories: availableCategories, categoriesLoaded, categoriesError } = useCatalogProducts()
   const [step, setStep] = useState(0)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
@@ -39,9 +41,6 @@ export function SellerOnboarding() {
   const [handle, setHandle] = useState('')
   const [description, setDescription] = useState('')
   const [cats, setCats] = useState<string[]>([])
-  const [availableCategories, setAvailableCategories] = useState<ApiCategory[]>([])
-  const [categoriesLoading, setCategoriesLoading] = useState(true)
-  const [categoriesError, setCategoriesError] = useState('')
   const [logo, setLogo] = useState<Upload>(null)
   const [banner, setBanner] = useState<Upload>(null)
 
@@ -275,8 +274,8 @@ export function SellerOnboarding() {
                     )
                   })}
                 </div>
-                {categoriesLoading && <p role="status" className="text-sm text-muted-foreground">Loading available categories…</p>}
-                {!categoriesLoading && !availableCategories.length && <p role="alert" className="text-sm text-destructive">{categoriesError || 'No active categories are available.'}</p>}
+                {!categoriesLoaded && <p role="status" className="text-sm text-muted-foreground">Loading available categories…</p>}
+                {categoriesLoaded && !availableCategories.length && <p role="alert" className="text-sm text-destructive">{categoriesError || 'No active categories are available.'}</p>}
                 {categoriesError && availableCategories.length > 0 && <p role="alert" className="text-sm text-destructive">{categoriesError}</p>}
                 {errors.cats && <p role="alert" className="text-xs font-medium text-deal">{errors.cats}</p>}
               </fieldset>

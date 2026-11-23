@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { Plus, Search } from 'lucide-react'
-import { categories } from '@/lib/data'
+import { useCatalogProducts } from '@/components/catalog-provider'
 import { type RequestCondition } from '@/lib/open-market'
 import { useOpenMarket } from '@/components/open-market/open-market-provider'
 import { RequestCard } from '@/components/open-market/request-card'
@@ -16,6 +16,7 @@ type Sort = 'newest' | 'budget-high' | 'budget-low' | 'fewest-offers'
 export function BrowseRequests({ initialCategory }: { initialCategory?: string }) {
   const { requests, responsesFor } = useOpenMarket()
   const { user } = useAuth()
+  const { categories } = useCatalogProducts()
   const [q, setQ] = useState('')
   const [category, setCategory] = useState(initialCategory ?? '')
   const [condition, setCondition] = useState<RequestCondition | ''>('')

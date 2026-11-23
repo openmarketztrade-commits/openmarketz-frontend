@@ -1,9 +1,10 @@
+'use client'
+
 import Link from 'next/link'
-import { categories } from '@/lib/data'
 import { Logo } from '@/components/logo'
+import { useCatalogProducts } from '@/components/catalog-provider'
 
 const columns = [
-  { title: 'Shop', links: categories.slice(0, 5).map((c) => ({ label: c.name, href: `/category/${c.slug}` })) },
   {
     title: 'Customer care',
     links: [
@@ -25,6 +26,9 @@ const columns = [
 ]
 
 export function SiteFooter() {
+  const { categories } = useCatalogProducts()
+  const shopColumn = { title: 'Shop', links: categories.slice(0, 5).map((c) => ({ label: c.name, href: `/category/${c.slug}` })) }
+  const footerColumns = [shopColumn, ...columns]
   return (
     <footer className="mt-24 border-t bg-muted/40">
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 md:grid-cols-[1.4fr_repeat(3,1fr)] md:px-6">
@@ -34,7 +38,7 @@ export function SiteFooter() {
             {"Nigeria's marketplace for verified sellers. Every payment is held securely until your order arrives."}
           </p>
         </div>
-        {columns.map((col) => (
+        {footerColumns.map((col) => (
           <div key={col.title}>
             <h2 className="text-sm font-semibold">{col.title}</h2>
             <ul className="mt-4 flex flex-col gap-2.5">

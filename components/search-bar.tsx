@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useId, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ArrowUpRight, Search, TrendingUp, X } from 'lucide-react'
-import { categories, formatPrice } from '@/lib/data'
+import { formatPrice } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { useCatalogProducts } from '@/components/catalog-provider'
 
@@ -18,7 +18,7 @@ export function SearchBar({ className }: { className?: string }) {
   const [open, setOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const listId = useId()
-  const { products } = useCatalogProducts()
+  const { products, categories } = useCatalogProducts()
 
   const trimmed = query.trim()
   const productMatches = useMemo(() => {
@@ -31,7 +31,7 @@ export function SearchBar({ className }: { className?: string }) {
   }, [products, trimmed])
   const categoryMatches = useMemo(
     () => (trimmed ? categories.filter((c) => c.name.toLowerCase().includes(trimmed.toLowerCase())).slice(0, 3) : []),
-    [trimmed],
+    [categories, trimmed],
   )
 
   function go(path: string) {

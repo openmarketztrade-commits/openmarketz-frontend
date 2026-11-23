@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { SearchX, SlidersHorizontal, X } from 'lucide-react'
-import { categories, type Product } from '@/lib/data'
+import { type Product } from '@/lib/data'
 import { ProductCard } from '@/components/product-card'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { FilterPanel, priceRanges, type Filters, emptyFilters } from '@/components/listing/filter-panel'
@@ -36,7 +36,7 @@ export function ListingView({
 }) {
   const [filters, setFilters] = useState<Filters>(emptyFilters)
   const [sort, setSort] = useState<Sort>('relevance')
-  const { products: catalogProducts, loaded, error } = useCatalogProducts()
+  const { products: catalogProducts, categories, loaded, error } = useCatalogProducts()
   const sourceProducts = sellerSlug ? initialProducts : catalogProducts
   const productsLoaded = sellerSlug ? true : loaded
   const searchTerms = query?.trim().toLowerCase().split(/\s+/).filter(Boolean) ?? []
@@ -53,7 +53,7 @@ export function ListingView({
   const brands = useMemo(() => Array.from(new Set(products.map((p) => p.brand))).sort(), [products])
   const availableCategories = useMemo(
     () => categories.filter((c) => products.some((p) => p.category === c.slug)),
-    [products],
+    [categories, products],
   )
 
   const results = useMemo(() => {

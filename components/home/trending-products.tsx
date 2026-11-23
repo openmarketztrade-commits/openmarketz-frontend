@@ -2,17 +2,15 @@
 
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { categories } from '@/lib/data'
 import { ProductCard } from '@/components/product-card'
 import { SectionHeading } from '@/components/section-heading'
 import { cn } from '@/lib/utils'
 import { useCatalogProducts } from '@/components/catalog-provider'
 
-const tabs = [{ slug: 'all', name: 'All' }, ...categories.slice(0, 5)]
-
 export function TrendingProducts() {
   const [active, setActive] = useState('all')
-  const { products: catalogProducts } = useCatalogProducts()
+  const { products: catalogProducts, categories } = useCatalogProducts()
+  const tabs = [{ slug: 'all', name: 'All' }, ...categories.slice(0, 5)]
   const list = (active === 'all' ? [...catalogProducts].sort((a, b) => b.sold - a.sold) : catalogProducts.filter((p) => p.category === active)).slice(0, 10)
 
   return (

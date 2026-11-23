@@ -319,11 +319,16 @@ export type ApiCategory = {
 
 export async function listPublicCategories(): Promise<ApiCategory[]> {
   const response = await apiRequest<
-    ApiCategory[] | { items?: ApiCategory[]; categories?: ApiCategory[]; data?: ApiCategory[] }
+    ApiCategory[] | {
+      items?: ApiCategory[]
+      categories?: ApiCategory[]
+      data?: ApiCategory[] | { items?: ApiCategory[]; categories?: ApiCategory[] }
+    }
   >('catalog/categories', { method: 'GET' }, { authenticated: false })
+  const data = Array.isArray(response) ? response : response.data
   const categories = Array.isArray(response)
     ? response
-    : response.items ?? response.categories ?? response.data ?? []
+    : response.items ?? response.categories ?? (Array.isArray(data) ? data : data?.items ?? data?.categories) ?? []
   return categories.filter((category) => category.active !== false && category.isActive !== false)
 }
 

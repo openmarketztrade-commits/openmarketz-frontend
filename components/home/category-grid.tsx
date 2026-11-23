@@ -2,13 +2,12 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { categories } from '@/lib/data'
 import { Reveal } from '@/components/reveal'
 import { SectionHeading } from '@/components/section-heading'
 import { useCatalogProducts } from '@/components/catalog-provider'
 
 export function CategoryGrid() {
-  const { products } = useCatalogProducts()
+  const { products, categories } = useCatalogProducts()
   return (
     <section className="mx-auto max-w-7xl px-4 pt-20 md:px-6" aria-labelledby="categories-heading">
       <SectionHeading eyebrow="Explore" title="Shop by category" href="/products" linkLabel="All products" />
@@ -20,7 +19,7 @@ export function CategoryGrid() {
               className="group relative flex aspect-[4/3.2] flex-col justify-end overflow-hidden rounded-2xl bg-muted p-4"
             >
               <Image
-                src={c.image || '/placeholder.svg'}
+                src={c.imageUrl || c.image || '/placeholder.svg'}
                 alt=""
                 fill
                 sizes="(min-width: 640px) 25vw, 50vw"

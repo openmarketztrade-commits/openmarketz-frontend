@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { Bell, HandCoins, Heart, Menu, MessageCircle, Package, ShoppingBag, Store } from 'lucide-react'
 import { useNotifications } from '@/components/notifications-provider'
 import { AccountMenu } from '@/components/account/account-menu'
-import { categories } from '@/lib/data'
+import { useCatalogProducts } from '@/components/catalog-provider'
 import { useShop } from '@/components/shop-provider'
 import { useAuth } from '@/components/auth-provider'
 import { SearchBar } from '@/components/search-bar'
@@ -19,6 +19,7 @@ export function SiteHeader() {
   const pathname = usePathname()
   const { cartCount, wishlist, offers, conversations } = useShop()
   const { user, authReady } = useAuth()
+  const { categories } = useCatalogProducts()
   const unread = conversations.reduce((sum, c) => sum + c.unread, 0)
   const { unreadCount: unreadNotifications } = useNotifications()
   const sellerHref = !authReady

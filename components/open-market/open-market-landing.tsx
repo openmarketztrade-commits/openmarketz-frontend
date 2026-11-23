@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { ArrowRight, BadgeCheck, HandCoins, Megaphone, ShieldCheck } from 'lucide-react'
-import { categories } from '@/lib/data'
+import { useCatalogProducts } from '@/components/catalog-provider'
 import { useOpenMarket } from '@/components/open-market/open-market-provider'
 import { RequestCard } from '@/components/open-market/request-card'
 
@@ -15,6 +15,7 @@ const steps = [
 
 export function OpenMarketLanding() {
   const { requests, responses } = useOpenMarket()
+  const { categories } = useCatalogProducts()
   const open = requests.filter((r) => r.status === 'open')
 
   return (

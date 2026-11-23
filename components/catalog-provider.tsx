@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { listPublicProducts, type CatalogProductApi } from '@/lib/api'
+import { listPublicCategories, listPublicProducts, type ApiCategory, type CatalogProductApi } from '@/lib/api'
 import { type Product } from '@/lib/data'
 
 export function mapCatalogProduct(product: CatalogProductApi): Product & { sellerSlug?: string; sellerName?: string } {
@@ -48,6 +48,9 @@ export function mapCatalogProduct(product: CatalogProductApi): Product & { selle
 
 type CatalogContextValue = {
   products: Product[]
+  categories: ApiCategory[]
+  categoriesLoaded: boolean
+  categoriesError: string | null
   loaded: boolean
   error: string | null
   refresh: () => Promise<void>
@@ -59,6 +62,9 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
   const [products, setProducts] = useState<Product[]>([])
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [categories, setCategories] = useState<ApiCategory[]>([])
+  const [categoriesLoaded, setCategoriesLoaded] = useState(false)
+  const [categoriesError, setCategoriesError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -81,9 +87,29 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
       })
   }, [refresh])
 
+  useEffect(() => {
+    let cancelled = false
+    void listPublicCategories()
+      .then((items) => {
+        if (!cancelled) {
+          setCategories(items)
+          setCategoriesError(null)
+        }
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          const message = cause instanceof Error ? cause.message : 'Categories could not be loaded.'
+          setCategoriesError(message)
+          console.error('Unable to load public categories from the marketplace API.', cause)
+        }
+      })
+      .finally(() => { if (!cancelled) setCategoriesLoaded(true) })
+    return () => { cancelled = true }
+  }, [])
+
   const value = useMemo(
-    () => ({ products, loaded, error, refresh }),
-    [products, loaded, error, refresh],
+    () => ({ products, loaded, error, refresh, categories, categoriesLoaded, categoriesError }),
+    [products, loaded, error, refresh, categories, categoriesLoaded, categoriesError],
   )
 
   return <CatalogContext.Provider value={value}>{children}</CatalogContext.Provider>

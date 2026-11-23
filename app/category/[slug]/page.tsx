@@ -1,46 +1,53 @@
-import type { Metadata } from 'next'
+'use client'
+
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
-import { categories, getCategory } from '@/lib/data'
+import { useParams } from 'next/navigation'
 import { ListingView } from '@/components/listing/listing-view'
 import { PageIntro } from '@/components/listing/page-intro'
+import { useCatalogProducts } from '@/components/catalog-provider'
 import { cn } from '@/lib/utils'
 
-export function generateStaticParams() {
-  return categories.map((c) => ({ slug: c.slug }))
-}
+export default function CategoryPage() {
+  const { slug } = useParams<{ slug: string }>()
+  const { categories, categoriesLoaded, categoriesError } = useCatalogProducts()
+  const category = categories.find((item) => item.slug === slug)
 
-export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
-  const { slug } = await params
-  const category = getCategory(slug)
-  return { title: category?.name ?? 'Category', description: category?.description }
-}
+  if (!categoriesLoaded) {
+    return <div role="status" className="mx-auto max-w-7xl px-4 py-12 text-sm text-muted-foreground md:px-6">Loading categories…</div>
+  }
 
-export default async function CategoryPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params
-  const category = getCategory(slug)
-  if (!category) notFound()
+  if (!category) {
+    return (
+      <div className="mx-auto max-w-7xl px-4 py-12 text-center md:px-6">
+        <h1 className="font-display text-2xl font-semibold">Category unavailable</h1>
+        <p role={categoriesError ? 'alert' : undefined} className="mt-2 text-sm text-muted-foreground">
+          {categoriesError || 'This category is no longer available.'}
+        </p>
+        <Link href="/products" className="mt-5 inline-flex text-sm font-medium text-primary">Browse all products</Link>
+      </div>
+    )
+  }
 
   return (
     <>
       <PageIntro
         title={category.name}
-        description={category.description}
+        description={`Browse products in ${category.name}.`}
         crumbs={[{ label: 'All products', href: '/products' }, { label: category.name }]}
       />
       <div className="mx-auto max-w-7xl px-4 md:px-6">
         <nav aria-label="Other categories" className="no-scrollbar -mx-4 mb-8 flex gap-2 overflow-x-auto px-4 md:mx-0 md:px-0">
-          {categories.map((c) => (
+          {categories.map((item) => (
             <Link
-              key={c.slug}
-              href={`/category/${c.slug}`}
-              aria-current={c.slug === slug ? 'page' : undefined}
+              key={item.slug}
+              href={`/category/${item.slug}`}
+              aria-current={item.slug === slug ? 'page' : undefined}
               className={cn(
                 'shrink-0 rounded-full border px-4 py-1.5 text-sm transition-colors',
-                c.slug === slug ? 'border-foreground bg-foreground text-background' : 'hover:bg-muted',
+                item.slug === slug ? 'border-foreground bg-foreground text-background' : 'hover:bg-muted',
               )}
             >
-              {c.name}
+              {item.name}
             </Link>
           ))}
         </nav>
