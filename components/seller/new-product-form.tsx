@@ -234,9 +234,9 @@ export function NewProductForm() {
         <aside className="flex flex-col gap-4 lg:sticky lg:top-28 lg:h-fit">
           <div className="overflow-hidden rounded-3xl border bg-card">
             <div className="relative aspect-square bg-muted">
-              {preview ? (
+              {previews[0] ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={preview} alt="" className="size-full object-cover" />
+                <img src={previews[0]} alt="" className="size-full object-cover" />
               ) : (
                 <Image src={categories.find((c) => c.slug === category)?.image ?? '/placeholder.svg'} alt="" fill sizes="300px" className="object-cover opacity-60" />
               )}
