@@ -308,6 +308,13 @@ export async function listPublicProducts(): Promise<CatalogProductApi[]> {
   return response.items ?? []
 }
 
+export type ApiCategory = { slug: string; name: string; image?: string | null }
+
+export async function listPublicCategories(): Promise<ApiCategory[]> {
+  const response = await apiRequest<{ items: ApiCategory[] }>('catalog/categories', { method: 'GET' }, { authenticated: false })
+  return response.items ?? []
+}
+
 export async function getPublicProduct(slug: string): Promise<CatalogProductApi> {
   return apiRequest<CatalogProductApi>(`catalog/products/${encodeURIComponent(slug)}`, { method: 'GET' })
 }

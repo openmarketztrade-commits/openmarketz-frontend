@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { categories, formatPrice } from '@/lib/data'
 import type { Product } from '@/lib/data'
-import { apiRequest, uploadMedia } from '@/lib/api'
+import { apiRequest, listPublicCategories, uploadMedia, type ApiCategory } from '@/lib/api'
 import { useSeller } from '@/components/seller/seller-provider'
 import { PageHeader } from '@/components/seller/seller-shell'
 import { Field, FormAlert, Select, inputClass } from '@/components/forms'
@@ -22,7 +22,10 @@ export function NewProductForm() {
   const { refresh: refreshCatalog } = useCatalogProducts()
   const [name, setName] = useState('')
   const [brand, setBrand] = useState('')
-  const [category, setCategory] = useState(categories[0].slug)
+  const [category, setCategory] = useState('')
+  const [activeCategories, setActiveCategories] = useState<ApiCategory[]>([])
+  const [categoriesLoaded, setCategoriesLoaded] = useState(false)
+  const [categoriesError, setCategoriesError] = useState('')
   const [condition, setCondition] = useState<NonNullable<Product['condition']>>('Brand new')
   const [price, setPrice] = useState('')
   const [compareAt, setCompareAt] = useState('')
@@ -38,6 +41,25 @@ export function NewProductForm() {
   const [videoPreview, setVideoPreview] = useState<string>()
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    void listPublicCategories()
+      .then((items) => {
+        if (!active) return
+        setActiveCategories(items)
+        setCategory((current) => current || items[0]?.slug || '')
+        setCategoriesError(items.length ? '' : 'There are no active product categories right now.')
+      })
+      .catch((error: unknown) => {
+        if (!active) return
+        setCategoriesError(error instanceof Error ? error.message : 'Product categories could not be loaded.')
+      })
+      .finally(() => {
+        if (active) setCategoriesLoaded(true)
+      })
+    return () => { active = false }
+  }, [])
 
   useEffect(() => {
     const urls = files.map((file) => URL.createObjectURL(file))
@@ -70,6 +92,10 @@ export function NewProductForm() {
   }
 
   async function submit(status: 'active' | 'draft') {
+    if (!category || !activeCategories.some((item) => item.slug === category)) {
+      toast.error(categoriesError || 'Choose an active product category.')
+      return
+    }
     if (!validate()) {
       toast.error('Please fix the highlighted fields.')
       return
@@ -177,9 +203,11 @@ export function NewProductForm() {
                 <input id="p-brand" value={brand} onChange={(e) => setBrand(e.target.value)} className={inputClass} />
               </Field>
               <Field label="Category" htmlFor="p-cat">
-                <Select id="p-cat" value={category} onChange={(e) => setCategory(e.target.value)}>
-                  {categories.map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
+                <Select id="p-cat" value={category} onChange={(e) => setCategory(e.target.value)} disabled={!categoriesLoaded || activeCategories.length === 0}>
+                  {!category && <option value="">{categoriesLoaded ? 'No active categories' : 'Loading categories…'}</option>}
+                  {activeCategories.map((c) => <option key={c.slug} value={c.slug}>{c.name}</option>)}
                 </Select>
+                {categoriesError && <p className="text-sm text-destructive" role="alert">{categoriesError}</p>}
               </Field>
               <Field label="Condition" htmlFor="p-cond">
                 <Select id="p-cond" value={condition} onChange={(e) => setCondition(e.target.value as typeof condition)}>
@@ -238,7 +266,7 @@ export function NewProductForm() {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={previews[0]} alt="" className="size-full object-cover" />
               ) : (
-                <Image src={categories.find((c) => c.slug === category)?.image ?? '/placeholder.svg'} alt="" fill sizes="300px" className="object-cover opacity-60" />
+                <Image src={activeCategories.find((c) => c.slug === category)?.image ?? categories.find((c) => c.slug === category)?.image ?? '/placeholder.svg'} alt="" fill sizes="300px" className="object-cover opacity-60" />
               )}
             </div>
             <div className="p-4">
