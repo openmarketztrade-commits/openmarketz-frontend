@@ -16,6 +16,7 @@ export function connectRealtime(): Socket {
 }
 
 let accessToken: string | null = null
+let refreshInFlight: Promise<string | null> | null = null
 
 export function setAccessToken(token: string | null) {
   accessToken = token
@@ -87,16 +88,30 @@ export async function apiRequest<T>(
     accessToken: requestAccessToken,
   }: { authenticated?: boolean; accessToken?: string } = {},
 ): Promise<T> {
-  const headers = new Headers(options.headers)
-  if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  const requestPath = path.replace(/^\/+/, '')
   const token = requestAccessToken ?? accessToken
-  if (authenticated && token) headers.set('Authorization', `Bearer ${token}`)
+  const send = (bearer?: string) => {
+    const headers = new Headers(options.headers)
+    if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+    if (authenticated && bearer) headers.set('Authorization', `Bearer ${bearer}`)
+    return fetch(`${API_BASE_URL}/${requestPath}`, { ...options, headers, credentials: 'include' })
+  }
 
-  const response = await fetch(`${API_BASE_URL}/${path.replace(/^\/+/, '')}`, {
-    ...options,
-    headers,
-    credentials: 'include',
-  })
+  let response = await send(token ?? undefined)
+  if (response.status === 401 && authenticated && token && !requestPath.startsWith('auth/')) {
+    refreshInFlight ??= fetch(`${API_BASE_URL}/auth/refresh`, { method: 'POST', credentials: 'include' })
+      .then(async (refreshResponse) => {
+        if (!refreshResponse.ok) return null
+        const session = await refreshResponse.json() as { accessToken?: string }
+        if (!session.accessToken) return null
+        setAccessToken(session.accessToken)
+        return session.accessToken
+      })
+      .catch(() => null)
+      .finally(() => { refreshInFlight = null })
+    const refreshedToken = await refreshInFlight
+    if (refreshedToken) response = await send(refreshedToken)
+  }
   const text = await response.text()
   const payload: unknown = text ? JSON.parse(text) : undefined
 
@@ -207,6 +222,29 @@ export type PublicStoreApi = {
   bannerUrl: string | null
   createdAt: string
   productCount: number
+  followerCount?: number
+}
+
+export async function listPublicStores() {
+  return apiRequest<{ items: PublicStoreApi[] }>('catalog/stores', { method: 'GET', cache: 'no-store' }, { authenticated: false })
+}
+
+export async function listStoreReviews(slug: string) {
+  return apiRequest<{ items: { id: string; rating: number; body: string | null; createdAt: string; reviewer: string; productName: string }[] }>(
+    `catalog/stores/${encodeURIComponent(slug)}/reviews`, { method: 'GET', cache: 'no-store' }, { authenticated: false },
+  )
+}
+
+export async function getStoreFollowStatus(slug: string) {
+  return apiRequest<{ following: boolean; followerCount: number }>(`catalog/stores/${encodeURIComponent(slug)}/follow`)
+}
+
+export async function followStore(slug: string) {
+  return apiRequest<{ following: boolean; followerCount: number }>(`catalog/stores/${encodeURIComponent(slug)}/follow`, { method: 'POST' })
+}
+
+export async function unfollowStore(slug: string) {
+  return apiRequest<{ following: boolean; followerCount: number }>(`catalog/stores/${encodeURIComponent(slug)}/follow`, { method: 'DELETE' })
 }
 
 export async function getPublicStore(slug: string) {

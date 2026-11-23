@@ -1,13 +1,13 @@
 'use client'
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { getSeller, type Product } from '@/lib/data'
+import type { Product } from '@/lib/data'
 import { useShop } from '@/components/shop-provider'
 import { useAuth } from '@/components/auth-provider'
 import { bookSellerShipping, listSellerOrders, listSellerProducts, updateSellerOrderShipment } from '@/lib/api'
 import { mapCatalogProduct, useCatalogProducts } from '@/components/catalog-provider'
 import {
-  STORE_ID, newWaybill,
+  newWaybill,
   type BargainRequest, type DispatchMethod, type FulfilmentStatus, type ListingStatus, type SalesOrder, type SellerAlert, type SellerListing,
 } from '@/lib/seller'
 
@@ -27,7 +27,7 @@ export type NewListing = Pick<Product, 'name' | 'brand' | 'category' | 'price' |
   }
 
 type SellerValue = {
-  store: NonNullable<ReturnType<typeof getSeller>>
+  store: { id: string; slug: string; name: string; initials: string; verified: boolean }
   listings: SellerListing[]
   bargains: BargainRequest[]
   orders: SalesOrder[]
@@ -54,7 +54,16 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   const shop = useShop()
   const { user } = useAuth()
   const { products: catalog } = useCatalogProducts()
-  const store = getSeller(STORE_ID)!
+  const store = useMemo(() => {
+    const name = user?.store?.name ?? user?.seller?.brandName ?? 'Your store'
+    return {
+      id: user?.store?.id ?? '',
+      slug: user?.store?.slug ?? user?.seller?.handle ?? '',
+      name,
+      initials: name.split(/\s+/).slice(0, 2).map((part) => part[0] ?? '').join('').toUpperCase(),
+      verified: user?.store?.verified ?? false,
+    }
+  }, [user])
   const [listings, setListings] = useState<SellerListing[]>([])
   const [listingsLoaded, setListingsLoaded] = useState(false)
   const [listingsError, setListingsError] = useState<string | null>(null)
@@ -164,7 +173,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
   const shopOrders = useMemo<SalesOrder[]>(
     () =>
       shop.orders.flatMap((o) => {
-        const items = o.items.filter((i) => productById(i.productId)?.sellerId === STORE_ID)
+        const items = o.items.filter((i) => productById(i.productId)?.sellerId === store.id)
         if (!items.length) return []
         const base: SalesOrder = {
           id: o.id,
@@ -179,7 +188,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
         }
         return [{ ...base, ...shopOverrides[o.id] }]
       }),
-    [shop.orders, shopOverrides, productById],
+    [shop.orders, shopOverrides, productById, store.id],
   )
 
   const shopBargains = useMemo<BargainRequest[]>(
@@ -244,7 +253,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
         ...input,
         id,
         slug,
-        sellerId: input.sellerId ?? STORE_ID,
+        sellerId: input.sellerId ?? store.id,
         rating: input.rating ?? 0,
         reviews: input.reviews ?? 0,
         sold: input.sold ?? 0,
@@ -256,7 +265,7 @@ export function SellerProvider({ children }: { children: React.ReactNode }) {
       pushAlert({ type: 'system', title: input.status === 'active' ? 'Listing is live' : 'Draft saved', body: `${input.name} ${input.status === 'active' ? 'is now visible to buyers.' : 'was saved as a draft.'}`, href: '/seller/products' })
       return listing
     },
-    [pushAlert],
+    [pushAlert, store.id],
   )
 
   const setListingStatus = useCallback((id: string, status: ListingStatus) => {

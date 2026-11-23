@@ -63,6 +63,7 @@ export type User = {
   twoFactor: boolean
   createdAt: number
   seller?: SellerApplication
+  store?: { id: string; slug: string; name: string; verified: boolean }
 }
 
 export type SignUpInput = Omit<User, 'id' | 'role' | 'emailVerified' | 'twoFactor' | 'createdAt' | 'seller' | 'avatarUrl'> & {
@@ -88,6 +89,7 @@ type ApiUser = {
   twoFactorEnabled?: boolean
   avatarMedia?: { secureUrl: string } | null
   createdAt: string
+  store?: { id: string; slug: string; name: string; verified: boolean } | null
 }
 
 type AuthResponse = { accessToken: string; user: ApiUser }
@@ -161,6 +163,7 @@ function mapApiUser(apiUser: ApiUser): User {
     marketing: Boolean(apiUser.marketingOptIn),
     twoFactor: Boolean(apiUser.twoFactorEnabled),
     createdAt: new Date(apiUser.createdAt).getTime(),
+    store: apiUser.store ?? undefined,
   }
 }
 

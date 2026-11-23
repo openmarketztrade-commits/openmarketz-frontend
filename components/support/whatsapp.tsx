@@ -1,5 +1,5 @@
-export const WHATSAPP_NUMBER = '2348001234567'
-export const WHATSAPP_DISPLAY = '+234 800 123 4567'
+export const WHATSAPP_NUMBER = '2347046721778'
+export const WHATSAPP_DISPLAY = '+234 704 672 1778'
 export const WHATSAPP_URL = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent('Hello OpenMarketz support, I need help with ')}`
 
 export function WhatsAppIcon({ className }: { className?: string }) {

@@ -3,6 +3,7 @@
 import Image from 'next/image'
 import { BadgeCheck, Calendar, MapPin, Star } from 'lucide-react'
 import type { PublicStoreApi } from '@/lib/api'
+import { StoreFollowButton } from '@/components/store/store-follow-button'
 
 export function StoreHeader({ store }: { store: PublicStoreApi }) {
   const joined = new Date(store.createdAt)
@@ -39,6 +40,10 @@ export function StoreHeader({ store }: { store: PublicStoreApi }) {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="mt-5 flex justify-end">
+        <StoreFollowButton slug={store.slug} initialCount={store.followerCount ?? 0} />
       </div>
 
       <dl className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border bg-border md:grid-cols-2">

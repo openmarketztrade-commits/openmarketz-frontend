@@ -5,6 +5,7 @@ import { ApiError, getPublicStore, listPublicStoreProducts, type CatalogProductA
 import type { Product } from '@/lib/data'
 import { StoreHeader } from '@/components/store/store-header'
 import { ListingView } from '@/components/listing/listing-view'
+import { StoreReviews } from '@/components/store/store-reviews'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 async function getStore(slug: string) {
@@ -52,10 +53,14 @@ export default async function StorePage({ params }: { params: Promise<{ slug: st
         <Tabs defaultValue="products" className="gap-8">
           <TabsList>
             <TabsTrigger value="products">Products</TabsTrigger>
+            <TabsTrigger value="reviews">Reviews ({store.reviewCount.toLocaleString()})</TabsTrigger>
             <TabsTrigger value="about">About the store</TabsTrigger>
           </TabsList>
           <TabsContent value="products">
             <ListingView products={products} showCategoryFilter emptyMessage="This store has no published products." sellerSlug={slug} />
+          </TabsContent>
+          <TabsContent value="reviews">
+            <StoreReviews slug={slug} />
           </TabsContent>
           <TabsContent value="about">
             <div className="grid gap-8 md:grid-cols-[1fr_320px]">

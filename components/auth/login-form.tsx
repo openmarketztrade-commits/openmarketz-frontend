@@ -11,7 +11,7 @@ export function LoginForm() {
   const { signIn } = useAuth()
   const router = useRouter()
   const params = useSearchParams()
-  const next = params.get('next') || '/account'
+  const next = params.get('next') || '/'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({})
@@ -31,8 +31,8 @@ export function LoginForm() {
     setLoading(false)
     if (!res.ok) return setFormError(res.error)
     toast.success('Welcome back!')
-    const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/account'
-    router.push(safeNext === '/account' ? res.redirectTo ?? safeNext : safeNext)
+    const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/'
+    router.push(safeNext)
   }
 
   return (
@@ -73,7 +73,7 @@ export function LoginForm() {
 
       <p className="text-center text-sm text-muted-foreground">
         {'New to OpenMarketz? '}
-        <Link href={`/signup${next !== '/account' ? `?next=${encodeURIComponent(next)}` : ''}`} className="font-medium text-primary hover:underline underline-offset-2">
+        <Link href={`/signup${next !== '/' ? `?next=${encodeURIComponent(next)}` : ''}`} className="font-medium text-primary hover:underline underline-offset-2">
           Create an account
         </Link>
       </p>

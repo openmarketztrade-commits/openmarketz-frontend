@@ -9,7 +9,7 @@ import type { Product } from '@/lib/data'
 import { apiRequest, uploadMedia } from '@/lib/api'
 import { useSeller } from '@/components/seller/seller-provider'
 import { PageHeader } from '@/components/seller/seller-shell'
-import { Field, FileDrop, FormAlert, Select, inputClass } from '@/components/forms'
+import { Field, FormAlert, Select, inputClass } from '@/components/forms'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { useCatalogProducts } from '@/components/catalog-provider'
@@ -32,17 +32,25 @@ export function NewProductForm() {
   const [negotiable, setNegotiable] = useState(true)
   const [minPrice, setMinPrice] = useState('')
   const [freeDelivery, setFreeDelivery] = useState(false)
-  const [file, setFile] = useState<File | null>(null)
-  const [preview, setPreview] = useState<string>()
+  const [files, setFiles] = useState<File[]>([])
+  const [videoFile, setVideoFile] = useState<File | null>(null)
+  const [previews, setPreviews] = useState<string[]>([])
+  const [videoPreview, setVideoPreview] = useState<string>()
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    if (!file) return setPreview(undefined)
-    const url = URL.createObjectURL(file)
-    setPreview(url)
+    const urls = files.map((file) => URL.createObjectURL(file))
+    setPreviews(urls)
+    return () => urls.forEach(URL.revokeObjectURL)
+  }, [files])
+
+  useEffect(() => {
+    if (!videoFile) return setVideoPreview(undefined)
+    const url = URL.createObjectURL(videoFile)
+    setVideoPreview(url)
     return () => URL.revokeObjectURL(url)
-  }, [file])
+  }, [videoFile])
 
   const priceNum = Number(price)
   const floorNum = Number(minPrice)
@@ -50,6 +58,7 @@ export function NewProductForm() {
 
   function validate() {
     const e: Record<string, string> = {}
+    if (!files.length) e.photos = 'Add at least one product photo.'
     if (name.trim().length < 4) e.name = 'Give your product a clear name.'
     if (!Number.isFinite(priceNum) || priceNum < 100) e.price = 'Enter a price of at least ₦100.'
     if (compareAt && Number(compareAt) <= priceNum) e.compareAt = 'Original price must be higher than the selling price.'
@@ -68,11 +77,9 @@ export function NewProductForm() {
 
     setSubmitting(true)
     try {
-      let mediaId: string | undefined
-      if (file) {
-        const asset = await uploadMedia(file, 'PRODUCT')
-        mediaId = asset.id
-      }
+      const uploadedPhotos = await Promise.all(files.map((file) => uploadMedia(file, 'PRODUCT')))
+      const uploadedVideo = videoFile ? await uploadMedia(videoFile, 'PRODUCT') : undefined
+      const mediaIds = [...uploadedPhotos.map((asset) => asset.id), ...(uploadedVideo ? [uploadedVideo.id] : [])]
 
       const payload = {
         name: name.trim(),
@@ -88,7 +95,7 @@ export function NewProductForm() {
         negotiable,
         minPrice: negotiable && minPrice ? floorNum : undefined,
         freeDelivery,
-        mediaIds: mediaId ? [mediaId] : [],
+        mediaIds,
         status: status === 'active' ? 'ACTIVE' : 'DRAFT',
       }
 
@@ -97,11 +104,12 @@ export function NewProductForm() {
         body: JSON.stringify(payload),
       })
 
-      const image = (created?.image as string | undefined) ?? categories.find((c) => c.slug === category)?.image ?? '/placeholder.svg'
+      const image = (created?.image as string | undefined) ?? uploadedPhotos[0]?.url ?? '/placeholder.svg'
       const gallery = Array.isArray(created?.gallery) && created.gallery.length ? (created.gallery as string[]) : [image]
       addListing({
         id: String(created?.id ?? ''),
         slug: String(created?.slug ?? ''),
+        sellerId: String((created?.seller as { id?: string } | undefined)?.id ?? ''),
         name: String(created?.name ?? name.trim()),
         brand: String(created?.brand ?? (brand.trim() || 'Unbranded')),
         category: String(created?.category ?? category),
@@ -148,16 +156,15 @@ export function NewProductForm() {
       >
         <div className="flex flex-col gap-6">
           <section className="flex flex-col gap-4 rounded-3xl border bg-card p-5">
-            <h2 className="font-semibold">Photos</h2>
-            <FileDrop
-              label="Product photo"
-              accept="image/*"
-              file={file}
-              previewUrl={preview}
-              onFile={setFile}
-              onClear={() => setFile(null)}
-              hint="JPG or PNG, at least 800×800. Clear photos on a plain background sell faster."
-            />
+            <h2 className="font-semibold">Photos and video</h2>
+            <label htmlFor="product-photos" className="text-sm font-medium">Product photos <span className="text-destructive">* At least one required</span></label>
+            <input id="product-photos" type="file" accept="image/*" multiple onChange={(e) => setFiles((current) => [...current, ...Array.from(e.target.files ?? [])].slice(0, 11))} className={inputClass} aria-invalid={!!errors.photos} />
+            {errors.photos && <p className="text-sm text-destructive" role="alert">{errors.photos}</p>}
+            <p className="text-xs text-muted-foreground">Choose several JPG, PNG, or WebP photos. The first photo is the main image; extra photos and video are optional.</p>
+            {previews.length > 0 && <ul className="grid grid-cols-3 gap-3 sm:grid-cols-5">{previews.map((src, index) => <li key={`${files[index]?.name}-${index}`} className="relative aspect-square overflow-hidden rounded-xl border"><Image src={src} alt={`Product photo ${index + 1}`} fill unoptimized className="object-cover" /><button type="button" onClick={() => setFiles((current) => current.filter((_, i) => i !== index))} className="absolute right-1 top-1 rounded-full bg-background/90 px-2 py-1 text-xs">Remove</button>{index === 0 && <span className="absolute bottom-1 left-1 rounded bg-background/90 px-2 py-1 text-[10px]">Main photo</span>}</li>)}</ul>}
+            <label htmlFor="product-video" className="mt-2 text-sm font-medium">Product video <span className="text-muted-foreground">(optional)</span></label>
+            <input id="product-video" type="file" accept="video/mp4,video/webm,video/quicktime" onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)} className={inputClass} />
+            {videoPreview && <div className="max-w-sm"><video src={videoPreview} controls className="w-full rounded-xl" /><button type="button" onClick={() => setVideoFile(null)} className="mt-2 text-sm text-destructive">Remove video</button></div>}
           </section>
 
           <section className="flex flex-col gap-4 rounded-3xl border bg-card p-5">
