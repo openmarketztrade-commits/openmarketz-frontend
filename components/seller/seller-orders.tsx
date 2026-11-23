@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import { useSearchParams } from 'next/navigation'
 import { useState } from 'react'
-import { Box, Check, MapPin, Phone, Truck } from 'lucide-react'
+import { Box, Check, Loader2, MapPin, Phone, Truck } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatPrice } from '@/lib/data'
 import { getSellerShippingRates, type ShippingRate } from '@/lib/api'
@@ -63,6 +63,7 @@ export function SellerOrders() {
 function OrderCard({ order: o, highlighted }: { order: SalesOrder; highlighted: boolean }) {
   const { productById, advanceOrder } = useSeller()
   const [dispatchOpen, setDispatchOpen] = useState(false)
+  const [updatingStatus, setUpdatingStatus] = useState(false)
   const stepIndex = fulfilmentSteps.findIndex((s) => s.id === o.status)
   const overdue = o.dispatchBy < Date.now() && stepIndex < 2
 
@@ -127,15 +128,19 @@ function OrderCard({ order: o, highlighted }: { order: SalesOrder; highlighted: 
           {o.status === 'awaiting_dispatch' && (
             <button
               type="button"
+              disabled={updatingStatus}
               onClick={() => {
+                if (updatingStatus) return
+                setUpdatingStatus(true)
                 void advanceOrder(o.id, 'packed')
                   .then(() => toast.success(`${o.id} marked as packed`))
                   .catch((error) => toast.error(error instanceof Error ? error.message : 'Order status could not be updated.'))
+                  .finally(() => setUpdatingStatus(false))
               }}
-              className="flex h-10 items-center gap-1.5 rounded-xl border px-4 text-sm font-semibold hover:bg-muted"
+              className="flex h-10 items-center gap-1.5 rounded-xl border px-4 text-sm font-semibold hover:bg-muted disabled:opacity-60"
             >
-              <Box className="size-4" aria-hidden="true" />
-              Mark as packed
+              {updatingStatus ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Box className="size-4" aria-hidden="true" />}
+              {updatingStatus ? 'Updating…' : 'Mark as packed'}
             </button>
           )}
           {o.source === 'api' && <button type="button" onClick={() => setDispatchOpen(true)} className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground">
@@ -211,6 +216,7 @@ function ShipbubbleDialog({ open, onOpenChange, order }: { open: boolean; onOpen
           ] as const).map(([label, value, setter]) => <label key={label} className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">{label}<input type="number" min="0.1" step="0.1" required value={value} onChange={(event) => { setter(event.target.value); setRequestToken(null); setRates([]) }} className="h-10 rounded-lg border bg-background px-3 text-sm text-foreground" /></label>)}
         </div>
         <button type="button" disabled={loadingRates || [weight, length, width, height].some((value) => !Number.isFinite(Number(value)) || Number(value) <= 0)} onClick={() => void loadRates()} className="flex h-10 items-center justify-center gap-2 rounded-xl border text-sm font-semibold disabled:opacity-50">
+          {loadingRates && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
           {loadingRates ? 'Loading rates…' : 'Get live rates'}
         </button>
         {rates.length > 0 && <fieldset className="flex max-h-56 flex-col gap-2 overflow-y-auto">
@@ -226,7 +232,7 @@ function ShipbubbleDialog({ open, onOpenChange, order }: { open: boolean; onOpen
         </fieldset>}
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         {selectedRate && <button type="button" disabled={submitting} onClick={() => void bookSelected()} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground disabled:opacity-50">
-          <Check className="size-4" aria-hidden="true" />
+          {submitting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Check className="size-4" aria-hidden="true" />}
           {submitting ? 'Booking shipment…' : `Book ${selectedRate.courierName} · ${formatPrice(selectedRate.total)}`}
         </button>
         }

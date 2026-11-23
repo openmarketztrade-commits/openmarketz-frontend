@@ -2,13 +2,12 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BadgeCheck, Building2, Check, IdCard, Landmark, Store } from 'lucide-react'
-import { categories } from '@/lib/data'
 import { countries, getCountry, maxBirthDate, type CountryCode } from '@/lib/geo'
 import { useAuth } from '@/components/auth-provider'
 import { Field, FileDrop, FormAlert, Select, SubmitButton, inputClass } from '@/components/forms'
-import { errorMessage, uploadMedia } from '@/lib/api'
+import { errorMessage, listPublicCategories, uploadMedia, type ApiCategory } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 const steps = [
@@ -40,6 +39,9 @@ export function SellerOnboarding() {
   const [handle, setHandle] = useState('')
   const [description, setDescription] = useState('')
   const [cats, setCats] = useState<string[]>([])
+  const [availableCategories, setAvailableCategories] = useState<ApiCategory[]>([])
+  const [categoriesLoading, setCategoriesLoading] = useState(true)
+  const [categoriesError, setCategoriesError] = useState('')
   const [logo, setLogo] = useState<Upload>(null)
   const [banner, setBanner] = useState<Upload>(null)
 
@@ -264,7 +266,7 @@ export function SellerOnboarding() {
               <fieldset className="flex flex-col gap-2">
                 <legend className="text-sm font-medium">What do you sell?</legend>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {categories.map((cat) => {
+                  {availableCategories.map((cat) => {
                     const on = cats.includes(cat.slug)
                     return (
                       <button key={cat.slug} type="button" aria-pressed={on} onClick={() => setCats(on ? cats.filter((x) => x !== cat.slug) : [...cats, cat.slug])} className={cn('h-9 rounded-full border px-4 text-sm', on ? 'border-primary bg-primary text-primary-foreground' : 'hover:bg-muted')}>
@@ -273,6 +275,9 @@ export function SellerOnboarding() {
                     )
                   })}
                 </div>
+                {categoriesLoading && <p role="status" className="text-sm text-muted-foreground">Loading available categories…</p>}
+                {!categoriesLoading && !availableCategories.length && <p role="alert" className="text-sm text-destructive">{categoriesError || 'No active categories are available.'}</p>}
+                {categoriesError && availableCategories.length > 0 && <p role="alert" className="text-sm text-destructive">{categoriesError}</p>}
                 {errors.cats && <p role="alert" className="text-xs font-medium text-deal">{errors.cats}</p>}
               </fieldset>
               <div className="grid gap-5 sm:grid-cols-[auto_1fr]">

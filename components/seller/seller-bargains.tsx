@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import { useState } from 'react'
-import { Check, MapPin, Repeat, X } from 'lucide-react'
+import { Check, Loader2, MapPin, Repeat, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatPrice } from '@/lib/data'
 import type { BargainRequest, BargainStatus } from '@/lib/seller'
@@ -57,6 +57,7 @@ function BargainCard({ bargain: b }: { bargain: BargainRequest }) {
   const { productById, respondToBargain } = useSeller()
   const p = productById(b.productId)
   const [countering, setCountering] = useState(false)
+  const [busy, setBusy] = useState<'accept' | 'counter' | 'decline' | null>(null)
   const [counter, setCounter] = useState(String(Math.round((b.offerPrice + b.listPrice) / 2 / 100) * 100))
   const off = Math.round((1 - b.offerPrice / b.listPrice) * 100)
 
@@ -92,54 +93,67 @@ function BargainCard({ bargain: b }: { bargain: BargainRequest }) {
               className="flex flex-wrap items-center gap-2"
               onSubmit={async (e) => {
                 e.preventDefault()
+                if (busy) return
                 const n = Number(counter)
                 if (!(n > b.offerPrice && n < b.listPrice)) {
                   toast.error(`Counter must be between ${formatPrice(b.offerPrice)} and ${formatPrice(b.listPrice)}`)
                   return
                 }
+                setBusy('counter')
                 try {
                   await respondToBargain(b.id, { counter: n })
                   toast.success(`Counter offer of ${formatPrice(n)} sent`)
                   setCountering(false)
                 } catch {
                   // The provider surfaces the API error.
+                } finally {
+                  setBusy(null)
                 }
               }}
             >
               <label htmlFor={`counter-${b.id}`} className="text-sm font-medium">Your price (₦)</label>
               <input id={`counter-${b.id}`} inputMode="numeric" value={counter} onChange={(e) => setCounter(e.target.value.replace(/\D/g, ''))} className={cn(inputClass, 'h-10 w-36')} />
-              <button type="submit" className="h-10 rounded-xl bg-foreground px-4 text-sm font-semibold text-background">Send counter</button>
-              <button type="button" onClick={() => setCountering(false)} className="h-10 rounded-xl px-3 text-sm font-medium text-muted-foreground hover:text-foreground">Cancel</button>
+              <button type="submit" disabled={!!busy} aria-busy={busy === 'counter'} className="flex h-10 items-center gap-2 rounded-xl bg-foreground px-4 text-sm font-semibold text-background disabled:opacity-60">
+                {busy === 'counter' && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
+                {busy === 'counter' ? 'Sending…' : 'Send counter'}
+              </button>
+              <button type="button" disabled={!!busy} onClick={() => setCountering(false)} className="h-10 rounded-xl px-3 text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-50">Cancel</button>
             </form>
           ) : (
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
+                disabled={!!busy}
                 onClick={() => {
+                  if (busy) return
+                  setBusy('accept')
                   void respondToBargain(b.id, 'accept').then(() => {
                     toast.success(`Accepted ${formatPrice(b.offerPrice)}. The buyer can now check out at this price.`)
-                  }).catch(() => {})
+                  }).catch(() => {}).finally(() => setBusy(null))
                 }}
-                className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground"
+                className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-60"
               >
-                <Check className="size-4" aria-hidden="true" />
-                Accept
+                {busy === 'accept' ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Check className="size-4" aria-hidden="true" />}
+                {busy === 'accept' ? 'Accepting…' : 'Accept'}
               </button>
-              <button type="button" onClick={() => setCountering(true)} className="flex h-10 items-center gap-1.5 rounded-xl border px-4 text-sm font-semibold hover:bg-muted">
+              <button type="button" disabled={!!busy} onClick={() => setCountering(true)} className="flex h-10 items-center gap-1.5 rounded-xl border px-4 text-sm font-semibold hover:bg-muted disabled:opacity-50">
                 <Repeat className="size-4" aria-hidden="true" />
                 Counter
               </button>
               <button
                 type="button"
+                disabled={!!busy}
                 onClick={() => {
+                  if (busy) return
+                  setBusy('decline')
                   void respondToBargain(b.id, 'decline').then(() => {
                     toast('Offer declined')
-                  }).catch(() => {})
+                  }).catch(() => {}).finally(() => setBusy(null))
                 }}
-                className="flex h-10 items-center gap-1.5 rounded-xl px-4 text-sm font-semibold text-deal hover:bg-deal/10"
+                className="flex h-10 items-center gap-1.5 rounded-xl px-4 text-sm font-semibold text-deal hover:bg-deal/10 disabled:opacity-50"
               >
-                <X className="size-4" aria-hidden="true" />
-                Decline
+                {busy === 'decline' ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <X className="size-4" aria-hidden="true" />}
+                {busy === 'decline' ? 'Declining…' : 'Decline'}
               </button>
             </div>
           )}

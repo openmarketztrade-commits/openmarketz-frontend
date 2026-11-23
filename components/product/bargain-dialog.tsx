@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { useState } from 'react'
-import { HandCoins, Keyboard, Mic } from 'lucide-react'
+import { HandCoins, Keyboard, Loader2, Mic } from 'lucide-react'
 import { formatPrice, type Product } from '@/lib/data'
 import { useShop } from '@/components/shop-provider'
 import { VoiceRecorder, type VoiceNote } from '@/components/voice-recorder'
@@ -20,6 +20,7 @@ export function BargainDialog({ product, quantity }: { product: Product; quantit
   const [message, setMessage] = useState('')
   const [voiceNote, setVoiceNote] = useState<VoiceNote>()
   const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   const pending = offers.find((o) =>
     o.role !== 'seller' &&
@@ -40,15 +41,19 @@ export function BargainDialog({ product, quantity }: { product: Product; quantit
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (submitting) return
     if (!offerValue) return setError('Enter the price you want to pay.')
     if (offerValue >= product.price) return setError('Your offer should be lower than the current price.')
     if (offerValue < minOffer) return setError(`Offers below ${formatPrice(minOffer)} are unlikely to be accepted.`)
+    setSubmitting(true)
     try {
       await submitOffer({ product, productId: product.id, offerPrice: offerValue, quantity, message: message.trim() || undefined, voiceNote })
       setOpen(false)
       reset()
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Your offer could not be sent.')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -170,9 +175,12 @@ export function BargainDialog({ product, quantity }: { product: Product; quantit
 
           <button
             type="submit"
-            className="h-12 rounded-full bg-primary text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+            disabled={submitting}
+            aria-busy={submitting}
+            className="flex h-12 items-center justify-center gap-2 rounded-full bg-primary text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {offerValue ? `Send offer of ${formatPrice(offerValue)}` : 'Send offer'}
+            {submitting && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
+            {submitting ? 'Sending offer…' : offerValue ? `Send offer of ${formatPrice(offerValue)}` : 'Send offer'}
           </button>
           <p className="-mt-2 text-center text-xs text-muted-foreground">
             {'Track responses in '}

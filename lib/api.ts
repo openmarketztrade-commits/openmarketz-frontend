@@ -308,11 +308,23 @@ export async function listPublicProducts(): Promise<CatalogProductApi[]> {
   return response.items ?? []
 }
 
-export type ApiCategory = { slug: string; name: string; image?: string | null }
+export type ApiCategory = {
+  slug: string
+  name: string
+  image?: string | null
+  imageUrl?: string | null
+  active?: boolean
+  isActive?: boolean
+}
 
 export async function listPublicCategories(): Promise<ApiCategory[]> {
-  const response = await apiRequest<{ items: ApiCategory[] }>('catalog/categories', { method: 'GET' }, { authenticated: false })
-  return response.items ?? []
+  const response = await apiRequest<
+    ApiCategory[] | { items?: ApiCategory[]; categories?: ApiCategory[]; data?: ApiCategory[] }
+  >('catalog/categories', { method: 'GET' }, { authenticated: false })
+  const categories = Array.isArray(response)
+    ? response
+    : response.items ?? response.categories ?? response.data ?? []
+  return categories.filter((category) => category.active !== false && category.isActive !== false)
 }
 
 export async function getPublicProduct(slug: string): Promise<CatalogProductApi> {

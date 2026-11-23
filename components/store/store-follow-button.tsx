@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Loader2 } from 'lucide-react'
 import { usePathname, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { useAuth } from '@/components/auth-provider'
@@ -51,7 +52,7 @@ export function StoreFollowButton({ slug, initialCount }: { slug: string; initia
     <div className="flex items-center gap-3">
       <span className="text-sm text-muted-foreground">{count.toLocaleString()} followers</span>
       <button type="button" onClick={() => void toggleFollow()} disabled={!authReady || loading} aria-pressed={following} className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60">
-        {loading ? 'Saving…' : following ? 'Following' : 'Follow store'}
+        {loading ? <><Loader2 className="mr-1.5 inline size-4 animate-spin" aria-hidden="true" />Saving…</> : following ? 'Following' : 'Follow store'}
       </button>
     </div>
   )

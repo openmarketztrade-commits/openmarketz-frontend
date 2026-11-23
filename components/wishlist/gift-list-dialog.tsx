@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import { useState } from 'react'
-import { Check } from 'lucide-react'
+import { Check, Loader2 } from 'lucide-react'
 import { useAuth } from '@/components/auth-provider'
 import { useShop } from '@/components/shop-provider'
 import { useCatalogProducts } from '@/components/catalog-provider'
@@ -141,7 +141,8 @@ export function GiftListDialog({
             <button type="button" onClick={() => onOpenChange(false)} className="h-11 rounded-xl border px-5 text-sm font-medium hover:bg-muted">
               Cancel
             </button>
-            <button type="submit" disabled={saving} className="h-11 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60">
+            <button type="submit" disabled={saving} aria-busy={saving} className="flex h-11 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60">
+              {saving && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
               {saving ? 'Saving…' : list ? 'Save changes' : 'Create list'}
             </button>
           </div>

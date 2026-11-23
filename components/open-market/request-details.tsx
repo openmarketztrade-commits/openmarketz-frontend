@@ -222,9 +222,11 @@ function RespondForm({ requestId, budgetMax }: { requestId: string; budgetMax: n
   const [note, setNote] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [sent, setSent] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
+    if (submitting) return
     const p = Number(price)
     const d = Number(days)
     const err: Record<string, string> = {}
@@ -233,6 +235,7 @@ function RespondForm({ requestId, budgetMax }: { requestId: string; budgetMax: n
     if (note.trim().length < 15) err.note = 'Describe what you are offering (15+ characters).'
     setErrors(err)
     if (Object.keys(err).length) return
+    setSubmitting(true)
     try {
       await submitResponse({ requestId, price: p, deliveryDays: d, note: note.trim() })
       setSent(true)
@@ -240,6 +243,8 @@ function RespondForm({ requestId, budgetMax }: { requestId: string; budgetMax: n
       setNote('')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Your offer could not be sent.')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -258,7 +263,7 @@ function RespondForm({ requestId, budgetMax }: { requestId: string; budgetMax: n
       <Field label="Message to buyer" error={errors.note} htmlFor="on">
         <textarea id="on" rows={4} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Brand, condition, warranty, what's included…" className={cn(inputClass, 'h-auto py-3')} aria-invalid={!!errors.note || undefined} />
       </Field>
-      <SubmitButton>Send offer</SubmitButton>
+      <SubmitButton loading={submitting}>{submitting ? 'Sending offer…' : 'Send offer'}</SubmitButton>
     </form>
   )
 }

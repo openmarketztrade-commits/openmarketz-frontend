@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
-import { Check, MapPin, Plus } from 'lucide-react'
+import { Check, Loader2, MapPin, Plus } from 'lucide-react'
 import { formatPrice } from '@/lib/data'
 import { deliveryOptions, useCartTotals, useShop, type Address, type DeliveryMethod } from '@/components/shop-provider'
 import { CheckoutSteps, OrderSummary, fieldClass } from '@/components/checkout/checkout-ui'
@@ -202,6 +202,7 @@ export function AddressView() {
                 </fieldset>
                 <div className="flex gap-3 sm:col-span-2">
                   <button type="submit" disabled={savingAddress} className="h-11 rounded-full bg-foreground px-6 text-sm font-medium text-background hover:opacity-90 disabled:opacity-60">
+                    {savingAddress && <Loader2 className="mr-2 inline size-4 animate-spin" aria-hidden="true" />}
                     {savingAddress ? 'Saving…' : 'Save address'}
                   </button>
                   {addresses.length > 0 && (

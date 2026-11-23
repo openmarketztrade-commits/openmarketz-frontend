@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
-import { CalendarDays, MapPin, Send } from 'lucide-react'
+import { CalendarDays, Loader2, MapPin, Send } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatPrice, getCategory } from '@/lib/data'
 import type { MarketRequest } from '@/lib/open-market'
@@ -114,8 +114,8 @@ function LeadCard({ request: r, responded }: { request: MarketRequest; responded
             </label>
             <div className="flex gap-2">
               <button type="submit" disabled={submitting} className="flex h-10 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50">
-                <Send className="size-4" aria-hidden="true" />
-                Send offer
+                {submitting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Send className="size-4" aria-hidden="true" />}
+                {submitting ? 'Sending…' : 'Send offer'}
               </button>
               <button type="button" onClick={() => setComposing(false)} className="h-10 rounded-xl px-3 text-sm font-medium text-muted-foreground">Cancel</button>
             </div>

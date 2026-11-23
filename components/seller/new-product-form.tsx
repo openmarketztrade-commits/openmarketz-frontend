@@ -4,7 +4,8 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { categories, formatPrice } from '@/lib/data'
+import { Loader2 } from 'lucide-react'
+import { formatPrice } from '@/lib/data'
 import type { Product } from '@/lib/data'
 import { apiRequest, listPublicCategories, uploadMedia, type ApiCategory } from '@/lib/api'
 import { useSeller } from '@/components/seller/seller-provider'
@@ -40,7 +41,7 @@ export function NewProductForm() {
   const [previews, setPreviews] = useState<string[]>([])
   const [videoPreview, setVideoPreview] = useState<string>()
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const [submitting, setSubmitting] = useState(false)
+  const [submitting, setSubmitting] = useState<'active' | 'draft' | null>(null)
 
   useEffect(() => {
     let active = true
@@ -49,7 +50,7 @@ export function NewProductForm() {
         if (!active) return
         setActiveCategories(items)
         setCategory((current) => current || items[0]?.slug || '')
-        setCategoriesError(items.length ? '' : 'There are no active product categories right now.')
+        setCategoriesError(items.length ? '' : 'The marketplace has no active product categories configured. An admin needs to add or activate categories before products can be listed.')
       })
       .catch((error: unknown) => {
         if (!active) return
@@ -92,6 +93,7 @@ export function NewProductForm() {
   }
 
   async function submit(status: 'active' | 'draft') {
+    if (submitting) return
     if (!category || !activeCategories.some((item) => item.slug === category)) {
       toast.error(categoriesError || 'Choose an active product category.')
       return
@@ -101,7 +103,7 @@ export function NewProductForm() {
       return
     }
 
-    setSubmitting(true)
+    setSubmitting(status)
     try {
       const uploadedPhotos = await Promise.all(files.map((file) => uploadMedia(file, 'PRODUCT')))
       const uploadedVideo = videoFile ? await uploadMedia(videoFile, 'PRODUCT') : undefined
@@ -165,7 +167,7 @@ export function NewProductForm() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'The product could not be posted.')
     } finally {
-      setSubmitting(false)
+      setSubmitting(null)
     }
   }
 
@@ -266,7 +268,7 @@ export function NewProductForm() {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={previews[0]} alt="" className="size-full object-cover" />
               ) : (
-                <Image src={activeCategories.find((c) => c.slug === category)?.image ?? categories.find((c) => c.slug === category)?.image ?? '/placeholder.svg'} alt="" fill sizes="300px" className="object-cover opacity-60" />
+                <Image src={activeCategories.find((c) => c.slug === category)?.imageUrl ?? activeCategories.find((c) => c.slug === category)?.image ?? '/placeholder.svg'} alt="" fill sizes="300px" className="object-cover opacity-60" />
               )}
             </div>
             <div className="p-4">
@@ -279,8 +281,14 @@ export function NewProductForm() {
           {priceNum > 0 && (
             <FormAlert tone="info">{`OpenMarketz commission (5%): ${formatPrice(fee)}. You receive ${formatPrice(priceNum - fee)} per sale after delivery.`}</FormAlert>
           )}
-          <button type="submit" className="h-12 rounded-xl bg-primary text-sm font-semibold text-primary-foreground hover:opacity-90">Publish product</button>
-          <button type="button" onClick={() => submit('draft')} className="h-12 rounded-xl border text-sm font-semibold hover:bg-muted">Save as draft</button>
+          <button type="submit" disabled={!!submitting} aria-busy={submitting === 'active'} className="flex h-12 items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
+            {submitting === 'active' && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
+            {submitting === 'active' ? 'Publishing…' : 'Publish product'}
+          </button>
+          <button type="button" disabled={!!submitting} aria-busy={submitting === 'draft'} onClick={() => void submit('draft')} className="flex h-12 items-center justify-center gap-2 rounded-xl border text-sm font-semibold hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60">
+            {submitting === 'draft' && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
+            {submitting === 'draft' ? 'Saving…' : 'Save as draft'}
+          </button>
         </aside>
       </form>
     </div>
